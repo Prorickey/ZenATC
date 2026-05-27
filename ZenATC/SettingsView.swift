@@ -11,7 +11,7 @@ struct SettingsView: View {
     let authManager: AuthManager
     let purchaseManager: PurchaseManager
     @Binding var showSettings: Bool
-    @State private var showAuthSheet = false
+    @State private var showUpgradeView = false
 
     private let settingsAccent = Color(red: 0.878, green: 0.298, blue: 0.149)
 
@@ -60,14 +60,19 @@ struct SettingsView: View {
                 .padding(.bottom, 30)
             }
         }
-        .sheet(isPresented: $showAuthSheet) {
-            UpgradeFlowSheet(authManager: authManager, purchaseManager: purchaseManager)
+        .sheet(isPresented: $showUpgradeView) {
+            UpgradeView(
+                authManager: authManager,
+                purchaseManager: purchaseManager,
+                showUpgrade: $showUpgradeView
+            )
+            .environment(themeManager)
         }
     }
 
     private func handleUpgradeTap() {
         guard !purchaseManager.isPro else { return }
-        showAuthSheet = true
+        showUpgradeView = true
     }
 
     private var header: some View {
@@ -693,11 +698,19 @@ private struct MiniAppScreen: View {
 private struct UpgradeFlowSheet: View {
     let authManager: AuthManager
     let purchaseManager: PurchaseManager
+    var preselectedPlanIndex: Int = 1
 
     @State private var email = ""
     @State private var password = ""
     @State private var errorMessage: String?
     @State private var isLoading = false
+
+    private var selectedProduct: Product? {
+        let idx = preselectedPlanIndex < purchaseManager.products.count
+            ? preselectedPlanIndex
+            : 0
+        return purchaseManager.products.isEmpty ? nil : purchaseManager.products[idx]
+    }
 
     var body: some View {
         NavigationStack {
@@ -760,7 +773,7 @@ private struct UpgradeFlowSheet: View {
 
     private var plansSection: some View {
         Section {
-            ForEach(purchaseManager.products) { product in
+            if let product = selectedProduct {
                 Button {
                     Task { await purchase(product) }
                 } label: {
@@ -777,7 +790,7 @@ private struct UpgradeFlowSheet: View {
                 Text(error).foregroundStyle(.red).font(.caption)
             }
         } header: {
-            Text("Choose a plan")
+            Text("Confirm plan")
         }
     }
 
