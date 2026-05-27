@@ -12,6 +12,7 @@ struct ContentView: View {
     @State private var themeManager = ThemeManager()
     @State private var showTrackPicker = false
     @State private var showSettings = false
+    @State private var showAirports = false
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
@@ -23,7 +24,7 @@ struct ContentView: View {
             themeManager.theme.background.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                TopBarView(showSettings: $showSettings)
+                TopBarView(showSettings: $showSettings, showAirports: $showAirports)
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -52,8 +53,15 @@ struct ContentView: View {
                     .transition(.move(edge: .top))
                     .zIndex(1)
             }
+
+            if showAirports {
+                AirportsListView(showAirports: $showAirports, currentAirportIndex: $audio.currentAirportIndex)
+                    .transition(.move(edge: .top))
+                    .zIndex(2)
+            }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirports)
         .environment(themeManager)
     }
 }
@@ -62,6 +70,7 @@ struct ContentView: View {
 
 private struct TopBarView: View {
     @Binding var showSettings: Bool
+    @Binding var showAirports: Bool
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
@@ -75,7 +84,7 @@ private struct TopBarView: View {
 
             Spacer()
 
-            RightIconsView(showSettings: $showSettings)
+            RightIconsView(showSettings: $showSettings, showAirports: $showAirports)
         }
     }
 }
@@ -110,11 +119,16 @@ private struct LiveIndicatorView: View {
 
 private struct RightIconsView: View {
     @Binding var showSettings: Bool
+    @Binding var showAirports: Bool
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
         HStack(spacing: 24) {
-            Image(systemName: "bell.fill")
+            Button {
+                showAirports = true
+            } label: {
+                Image(systemName: "airplane")
+            }
 
             Button {
                 withAnimation(.easeInOut(duration: 0.3)) {
