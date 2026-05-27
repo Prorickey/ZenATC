@@ -35,7 +35,7 @@ struct ContentView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
-                Spacer().frame(height: 20)
+                Spacer().frame(height: 10)
 
                 AirportCarouselView(
                     airports: airports,
@@ -46,8 +46,6 @@ struct ContentView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
-                .offset(y: showTrackPicker ? -20 : 0)
-                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showTrackPicker)
                 .onChange(of: audio.currentAirportIndex) { audio.reloadATC() }
 
                 BottomControlsView(
@@ -359,7 +357,7 @@ private struct AirportCarouselView: View {
     var body: some View {
         TabView(selection: $currentIndex) {
             ForEach(airports.indices, id: \.self) { index in
-                AirportPageView(airport: airports[index], dragY: showTrackPicker ? -113 : dragY)
+                AirportPageView(airport: airports[index], dragY: showTrackPicker ? -200 : dragY)
                     .tag(index)
             }
         }
@@ -375,7 +373,7 @@ private struct AirportCarouselView: View {
                     let predicted = value.predictedEndTranslation.height
                     if dy < -40 || predicted < -80 {
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                            dragY = -113
+                            dragY = -200
                         }
                         onOpen()
                     }
@@ -393,7 +391,7 @@ private struct AirportPageView: View {
 
     // ── Tune default letter size here ──────────────────────────────────────
     private let defaultWidthFraction: CGFloat  = 0.98   // fraction of container width
-    private let defaultHeightFraction: CGFloat = 0.95   // fraction of container height
+    private let defaultHeightFraction: CGFloat = 0.95    // fraction of container height
     // ───────────────────────────────────────────────────────────────────────
 
     private let referenceCapHeight: CGFloat = UIFont.abcGravity(size: 200).capHeight
@@ -406,9 +404,9 @@ private struct AirportPageView: View {
             let baseScaleY = referenceCapHeight > 0
                 ? (geo.size.height / referenceCapHeight) * defaultHeightFraction
                 : 1
-            let clampedDragY = min(max(dragY, -113), 0)
+            let clampedDragY = min(max(dragY, -200), 0)
             let stretchDelta = naturalTextHeight > 0 ? clampedDragY / naturalTextHeight : 0
-            let finalScaleY = max(baseScaleY * 0.6625, baseScaleY + stretchDelta)
+            let finalScaleY = max(baseScaleY * 0.800, baseScaleY + stretchDelta)
             // posY uses referenceCapHeight (visible glyph) so the cap's top stays pinned.
             let posY = geo.size.height / 2 + referenceCapHeight * (finalScaleY - baseScaleY) / 2
 
@@ -459,7 +457,7 @@ private struct BottomControlsView: View {
                 PlayPauseButton(isPlaying: $isPlaying)
                     .padding(.top, 16)
             }
-            .offset(y: showTrackPicker ? -80 : -15)
+            .offset(y: showTrackPicker ? -80 : 25)
             .animation(Self.pickerSpring, value: showTrackPicker)
 
             ZStack {
@@ -736,9 +734,11 @@ private struct MixerSliderView: View {
                             }
                             dragStartBalance = balance
                         }
-                        let start = dragStartBalance ?? balance
-                        let delta = Double(value.translation.width / usableRange)
-                        balance = min(max(start + delta, 0), 1)
+                        if abs(value.translation.width) > 5 {
+                            let start = dragStartBalance ?? balance
+                            let delta = Double(value.translation.width / usableRange)
+                            balance = min(max(start + delta, 0), 1)
+                        }
                     }
                     .onEnded { _ in
                         isDragging = false
