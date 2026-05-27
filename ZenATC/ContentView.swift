@@ -10,6 +10,7 @@ struct ContentView: View {
     @State private var themeManager = ThemeManager()
     @State private var showTrackPicker = false
     @State private var showAccountSheet = false
+    @State private var showSettings = false
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
@@ -17,11 +18,11 @@ struct ContentView: View {
     var body: some View {
         @Bindable var audio = audio
 
-        ZStack {
+        ZStack(alignment: .top) {
             themeManager.theme.background.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                TopBarView(showAccountSheet: $showAccountSheet)
+                TopBarView(showAccountSheet: $showAccountSheet, showSettings: $showSettings)
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -44,7 +45,14 @@ struct ContentView: View {
                 )
                 .onChange(of: audio.selectedTrackIndex) { audio.reloadLofi() }
             }
+
+            if showSettings {
+                SettingsView(showSettings: $showSettings)
+                    .transition(.move(edge: .top))
+                    .zIndex(1)
+            }
         }
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
         .environment(themeManager)
         .sheet(isPresented: $showAccountSheet) {
             AccountSheet()
@@ -57,6 +65,7 @@ struct ContentView: View {
 private struct TopBarView: View {
     @Binding var showAccountSheet: Bool
     @Environment(ThemeManager.self) private var themeManager
+    @Binding var showSettings: Bool
 
     var body: some View {
         HStack(spacing: 10) {
@@ -69,7 +78,7 @@ private struct TopBarView: View {
 
             Spacer()
 
-            RightIconsView(showAccountSheet: $showAccountSheet)
+            RightIconsView(showAccountSheet: $showAccountSheet, showSettings: $showSettings)
         }
     }
 }
@@ -104,6 +113,7 @@ private struct LiveIndicatorView: View {
 
 private struct RightIconsView: View {
     @Binding var showAccountSheet: Bool
+    @Binding var showSettings: Bool
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
@@ -113,7 +123,7 @@ private struct RightIconsView: View {
             Button {
                 showAccountSheet = true
             } label: {
-                Image(systemName: "gearshape.fill")
+                Image(systemName: "person.crop.circle.fill")
             }
 
             Button {
@@ -122,6 +132,12 @@ private struct RightIconsView: View {
                 }
             } label: {
                 Image(systemName: "paintpalette.fill")
+            }
+
+            Button {
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
             }
         }
         .font(.system(size: 28))
