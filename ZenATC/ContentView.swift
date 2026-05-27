@@ -114,10 +114,10 @@ private struct TopBarView: View {
         HStack(spacing: 10) {
             LiveIndicatorView(isPlaying: isPlaying, pausedColor: pausedColor)
 
-            Text(isPlaying ? "LIVE" : "Paused")
-                .font(.airportCode(size: 18))
-                .fontWeight(.heavy)
-                .foregroundStyle(isPlaying ? themeManager.theme.foreground : pausedColor)
+            AnimatedStatusText(
+                text: isPlaying ? "LIVE" : "Paused",
+                color: isPlaying ? themeManager.theme.foreground : pausedColor
+            )
 
             Spacer()
 
@@ -132,57 +132,98 @@ private struct LiveIndicatorView: View {
     let isPlaying: Bool
     let pausedColor: Color
     @Environment(ThemeManager.self) private var themeManager
-    @State private var isPulsing = false
     private let liveDotSize: CGFloat = 14
-    private let pausedDotSize: CGFloat = 22
+    private let haloDotSize: CGFloat = 26
     private let pauseBarWidth: CGFloat = 4
     private let pauseBarHeight: CGFloat = 12
     private let pauseBarSpacing: CGFloat = 4
+    private let ripplePeriod: Double = 5
 
     var body: some View {
         ZStack {
             if isPlaying {
                 Circle()
-                    .stroke(themeManager.theme.foreground.opacity(0.55), lineWidth: 2)
-                    .frame(width: 28, height: 28)
-                    .scaleEffect(isPulsing ? 2.6 : 0.5)
-                    .opacity(isPulsing ? 0 : 0.8)
-                    .animation(
-                        .easeOut(duration: 1.4).repeatForever(autoreverses: false),
-                        value: isPulsing
-                    )
+                    .fill(themeManager.theme.foreground.opacity(0.18))
+                    .frame(width: haloDotSize, height: haloDotSize)
 
-                Circle()
-                    .stroke(themeManager.theme.foreground.opacity(0.4), lineWidth: 2)
-                    .frame(width: 28, height: 28)
-                    .scaleEffect(isPulsing ? 2.0 : 0.4)
-                    .opacity(isPulsing ? 0 : 0.7)
-                    .animation(
-                        .easeOut(duration: 1.4).repeatForever(autoreverses: false).delay(0.25),
-                        value: isPulsing
-                    )
+                // Each ripple's phase is derived purely from wall-clock time —
+                // no animation state to reset, so the loop is perfectly seamless.
+                TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { timeline in
+                    let t = timeline.date.timeIntervalSince1970
+                    ZStack {
+                        ForEach(0..<3, id: \.self) { index in
+                            let offset = Double(index) / 3.0
+                            let phase = (t / ripplePeriod + offset).truncatingRemainder(dividingBy: 1.0)
+                            Circle()
+                                .stroke(themeManager.theme.foreground.opacity(0.5), lineWidth: 2)
+                                .frame(width: 24, height: 24)
+                                .scaleEffect(0.65 + CGFloat(phase) * 1.05)
+                                .opacity(pow(1.0 - phase, 1.8) * 0.72)
+                        }
+                    }
+                }
             }
 
             Circle()
-                .fill(isPlaying ? themeManager.theme.foreground : pausedColor)
-                .frame(width: isPlaying ? liveDotSize : pausedDotSize,
-                       height: isPlaying ? liveDotSize : pausedDotSize)
+                .fill(themeManager.theme.foreground)
+                .frame(width: liveDotSize, height: liveDotSize)
+                .opacity(isPlaying ? 1 : 0)
+                .scaleEffect(isPlaying ? 1 : 0.2)
 
-            HStack(spacing: pauseBarSpacing) {
-                RoundedRectangle(cornerRadius: 1.5)
-                    .frame(width: pauseBarWidth, height: pauseBarHeight)
-                RoundedRectangle(cornerRadius: 1.5)
-                    .frame(width: pauseBarWidth, height: pauseBarHeight)
-            }
-            .foregroundStyle(Color.white)
+            PauseGlyph(
+                color: pausedColor,
+                barWidth: pauseBarWidth,
+                barHeight: pauseBarHeight,
+                barSpacing: pauseBarSpacing
+            )
             .opacity(isPlaying ? 0 : 1)
-            .scaleEffect(isPlaying ? 0.3 : 1)
-        }
-        .onAppear { isPulsing = true }
-        .onChange(of: isPlaying) { _, newValue in
-            if newValue { isPulsing = true }
+            .scaleEffect(isPlaying ? 0.2 : 1)
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isPlaying)
+    }
+}
+
+private struct PauseGlyph: View {
+    let color: Color
+    let barWidth: CGFloat
+    let barHeight: CGFloat
+    let barSpacing: CGFloat
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(color)
+                .frame(width: barWidth, height: barHeight)
+                .offset(x: -(barSpacing / 2 + barWidth / 2))
+
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(color)
+                .frame(width: barWidth, height: barHeight)
+                .offset(x: (barSpacing / 2 + barWidth / 2))
+        }
+    }
+}
+
+private struct AnimatedStatusText: View {
+    let text: String
+    let color: Color
+
+    var body: some View {
+        let letters = Array(text)
+
+        HStack(spacing: 0) {
+            ForEach(letters.indices, id: \.self) { index in
+                Text(String(letters[index]))
+                    .font(.airportCode(size: 18))
+                    .fontWeight(.heavy)
+                    .foregroundStyle(color)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(
+                        .easeOut(duration: 0.25).delay(Double(index) * 0.03),
+                        value: text
+                    )
+            }
+        }
     }
 }
 
@@ -194,7 +235,7 @@ private struct RightIconsView: View {
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 14) {
             Button {
                 showAirports = true
             } label: {
@@ -215,7 +256,8 @@ private struct RightIconsView: View {
                 Image(systemName: "gearshape.fill")
             }
         }
-        .font(.system(size: 28))
+        .font(.system(size: 20))
+        .scaleEffect(x: 0.95, y: 1.0)
         .foregroundStyle(themeManager.theme.foreground)
         .buttonStyle(.plain)
     }
@@ -626,9 +668,9 @@ private struct PlayPauseButton: View {
                     .frame(width: 86.73, height: 86.73)
 
                 Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 28, weight: .medium))
+                    .font(.system(size: 46, weight: .medium))
                     .foregroundStyle(isPlaying ? themeManager.theme.foreground : themeManager.theme.background)
-                    .offset(x: isPlaying ? 0 : 2)
+                    .offset(x: isPlaying ? 0 : -1)
             }
         }
     }
