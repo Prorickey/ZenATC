@@ -445,6 +445,10 @@ private struct BottomControlsView: View {
     @Binding var showTrackPicker: Bool
     @Binding var isSliderActive: Bool
     @Environment(ThemeManager.self) private var themeManager
+    @Namespace private var pickerNS
+
+    private static let pickerSpring: Animation = .spring(response: 0.55, dampingFraction: 0.85)
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
@@ -454,29 +458,26 @@ private struct BottomControlsView: View {
                 PlayPauseButton(isPlaying: $isPlaying)
                     .padding(.top, 16)
             }
-            .offset(y: showTrackPicker ? -80 : 0)
-            .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showTrackPicker)
+            .offset(y: showTrackPicker ? -80 : -15)
+            .animation(Self.pickerSpring, value: showTrackPicker)
 
-            // Picker and title share a fixed-height ZStack so no layout animation
-            // competes with drag tracking. Visual transforms only.
             ZStack {
                 InlineTrackPicker(
                     tracks: tracks,
                     selectedIndex: $selectedTrackIndex,
                     isExpanded: showTrackPicker,
                     onConfirm: {
-                        withAnimation(.spring(duration: 0.45)) {
+                        withAnimation(Self.pickerSpring) {
                             showTrackPicker = false
                         }
-                    }
+                    },
+                    namespace: pickerNS
                 )
+                .offset(y: -70)
                 .allowsHitTesting(showTrackPicker)
-                .opacity(showTrackPicker ? 1 : 0)
-                .offset(y: showTrackPicker ? -80 : 25)
-                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: showTrackPicker)
 
                 Button {
-                    withAnimation(.spring(duration: 0.45)) {
+                    withAnimation(Self.pickerSpring) {
                         showTrackPicker = true
                     }
                 } label: {
@@ -486,12 +487,12 @@ private struct BottomControlsView: View {
                         .kerning(0)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(themeManager.theme.foreground)
+                        .matchedGeometryEffect(id: "selectedSong", in: pickerNS, isSource: !showTrackPicker)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
-                .allowsHitTesting(!showTrackPicker)
                 .opacity(showTrackPicker ? 0 : 1)
-                .offset(y: showTrackPicker ? -45 : -18)
-                .animation(.easeOut(duration: 0.22), value: showTrackPicker)
+                .offset(y: -18)
+                .allowsHitTesting(!showTrackPicker)
             }
             .padding(.top, 16)
             .padding(.bottom, 36)
@@ -507,60 +508,85 @@ private struct InlineTrackPicker: View {
     @Binding var selectedIndex: Int
     let isExpanded: Bool
     let onConfirm: () -> Void
+    let namespace: Namespace.ID
     @Environment(ThemeManager.self) private var themeManager
 
     private let itemHeight: CGFloat = 52
     private let visibleCount = 3
     @State private var dragOffset: CGFloat = 0
     @State private var textWidths: [Int: CGFloat] = [:]
+    @State private var displayOrder: [Int] = []
 
-    private func centredIndex(drag: CGFloat) -> Int {
-        let raw = Double(selectedIndex) - Double(drag) / Double(itemHeight)
-        return max(0, min(Int(round(raw)), tracks.count - 1))
+    private func rebuildDisplayOrder() {
+        guard !tracks.isEmpty else { displayOrder = []; return }
+        let n = tracks.count
+        let start = max(0, min(selectedIndex, n - 1))
+        displayOrder = (0..<n).map { (start + $0) % n }
     }
 
     var body: some View {
         let totalHeight = itemHeight * CGFloat(visibleCount)
-        let baseOffset = -CGFloat(selectedIndex) * itemHeight
-        let rawCenter = Double(selectedIndex) - Double(dragOffset) / Double(itemHeight)
+        let selectedDisplayPos = displayOrder.firstIndex(of: selectedIndex) ?? 0
+        let baseOffset = -CGFloat(selectedDisplayPos) * itemHeight
+        let rawCenter = Double(selectedDisplayPos) - Double(dragOffset) / Double(itemHeight)
 
         GeometryReader { geo in
             let availableWidth = geo.size.width - 32
 
             VStack(spacing: 0) {
-                ForEach(tracks.indices, id: \.self) { i in
-                    let dist = abs(Double(i) - rawCenter)
+                ForEach(displayOrder.indices, id: \.self) { pos in
+                    let origIndex = displayOrder[pos]
+                    let dist = abs(Double(pos) - rawCenter)
                     let size = CGFloat(28) + CGFloat(max(0, 1 - dist)) * 6.77
                     let opacity = max(0.15, 1.0 - dist * 0.55)
-                    let fits = (textWidths[i] ?? 0) <= availableWidth
-                    let isSelected = i == selectedIndex
+                    let fits = (textWidths[origIndex] ?? 0) <= availableWidth
+                    let isSelected = origIndex == selectedIndex
+                    let springOutOffset: CGFloat = -CGFloat(pos - selectedDisplayPos) * itemHeight
 
-                    Text(tracks[i].name)
-                        .font(.airportCode(size: isSelected ? 34.77 : size))
-                        .fontWeight(.heavy)
-                        .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .background(
-                            GeometryReader { proxy in
-                                Color.clear.preference(key: TextWidthKey.self, value: [i: proxy.size.width])
+                    if isSelected {
+                        Text(tracks[origIndex].name)
+                            .font(.airportCode(size: 34.77))
+                            .fontWeight(.heavy)
+                            .foregroundStyle(themeManager.theme.foreground)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(key: TextWidthKey.self, value: [origIndex: proxy.size.width])
+                                }
+                            )
+                            .frame(height: fits ? itemHeight : 0)
+                            .frame(maxWidth: .infinity)
+                            .opacity(fits && isExpanded ? 1 : 0)
+                            .matchedGeometryEffect(id: "selectedSong", in: namespace, isSource: isExpanded)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                if dragOffset == 0 { onConfirm() }
                             }
-                        )
-                        .frame(height: fits ? itemHeight : 0)
-                        .frame(maxWidth: .infinity)
-                        .opacity(fits ? (isSelected ? 1 : (isExpanded ? 1 : 0)) : 0)
-                        .animation(.easeInOut(duration: 0.25).delay(isSelected ? 0 : 0.12), value: isExpanded)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            if i == selectedIndex && dragOffset == 0 {
-                                onConfirm()
-                            } else {
-                                withAnimation(.spring(duration: 0.3)) {
-                                    selectedIndex = i
+                    } else {
+                        Text(tracks[origIndex].name)
+                            .font(.airportCode(size: size))
+                            .fontWeight(.heavy)
+                            .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .background(
+                                GeometryReader { proxy in
+                                    Color.clear.preference(key: TextWidthKey.self, value: [origIndex: proxy.size.width])
+                                }
+                            )
+                            .frame(height: fits ? itemHeight : 0)
+                            .frame(maxWidth: .infinity)
+                            .opacity(fits && isExpanded ? 1 : 0)
+                            .offset(y: isExpanded ? 0 : springOutOffset)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                                    selectedIndex = origIndex
                                     dragOffset = 0
                                 }
                             }
-                        }
+                    }
                 }
             }
             .offset(y: baseOffset + dragOffset)
@@ -576,16 +602,22 @@ private struct InlineTrackPicker: View {
                     }
                 }
                 .onEnded { value in
-                    let newIndex = centredIndex(drag: value.predictedEndTranslation.height)
-                    withAnimation(.spring(duration: 0.3)) {
-                        selectedIndex = newIndex
+                    let raw = Double(selectedDisplayPos) - Double(value.predictedEndTranslation.height) / Double(itemHeight)
+                    let newPos = max(0, min(Int(round(raw)), displayOrder.count - 1))
+                    withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                        selectedIndex = displayOrder[newPos]
                         dragOffset = 0
                     }
+                    onConfirm()
                 }
         )
         .sensoryFeedback(.selection, trigger: selectedIndex)
         .frame(height: totalHeight)
         .clipped()
+        .onAppear { rebuildDisplayOrder() }
+        .onChange(of: isExpanded) { _, expanded in
+            if expanded { rebuildDisplayOrder() }
+        }
     }
 }
 
