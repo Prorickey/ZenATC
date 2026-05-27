@@ -191,17 +191,20 @@ private struct RadarSweepView: View {
             let currentAngle = fraction * 2 * .pi - .pi / 2
             let trailArc: Double = .pi / 2  // 90° fading trail
 
-            // Trail: 20 arc segments fading from transparent at tail to solid at the line
-            let segments = 20
+            // Trail: filled pie-wedge slices spanning center→edge, fading from
+            // transparent at the tail to solid just behind the sweep line
+            let segments = 24
             for i in 0..<segments {
                 let t0 = Double(i) / Double(segments)
                 let t1 = Double(i + 1) / Double(segments)
                 let a0 = currentAngle - trailArc + t0 * trailArc
                 let a1 = currentAngle - trailArc + t1 * trailArc
-                var arc = Path()
-                arc.addArc(center: center, radius: radius - 0.75,
-                           startAngle: .radians(a0), endAngle: .radians(a1), clockwise: false)
-                context.stroke(arc, with: .color(color.opacity(t0 * 0.65)), lineWidth: 2.0)
+                var wedge = Path()
+                wedge.move(to: center)
+                wedge.addArc(center: center, radius: radius,
+                             startAngle: .radians(a0), endAngle: .radians(a1), clockwise: false)
+                wedge.closeSubpath()
+                context.fill(wedge, with: .color(color.opacity(t0 * 0.55)))
             }
 
             // Sweep line from center to ring edge
