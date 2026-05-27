@@ -8,6 +8,7 @@ import SwiftUI
 struct AirportsListView: View {
     @Binding var showAirports: Bool
     @Binding var currentAirportIndex: Int
+    @Binding var showUpgrade: Bool
     @Environment(ThemeManager.self) private var themeManager
 
     private let freeAirports = Airport.all.filter { !$0.isPro }
@@ -63,7 +64,12 @@ struct AirportsListView: View {
                     }
 
                     // PRO section divider
-                    ProSectionRow()
+                    ProSectionRow {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                            showAirports = false
+                            showUpgrade = true
+                        }
+                    }
                     AirportDivider()
 
                     // Pro airports
@@ -111,6 +117,7 @@ private struct AirportRow: View {
 // MARK: - PRO Section Row
 
 private struct ProSectionRow: View {
+    let onUpgrade: () -> Void
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
@@ -129,7 +136,7 @@ private struct ProSectionRow: View {
 
             Spacer()
 
-            Button { } label: {
+            Button(action: onUpgrade) {
                 HStack(spacing: 5) {
                     Text("Upgrade")
                     Image(systemName: "arrow.right")
@@ -152,7 +159,8 @@ private struct ProSectionRow: View {
 #Preview {
     AirportsListView(
         showAirports: .constant(true),
-        currentAirportIndex: .constant(0)
+        currentAirportIndex: .constant(0),
+        showUpgrade: .constant(false)
     )
     .environment(ThemeManager())
 }

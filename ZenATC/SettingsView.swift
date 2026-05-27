@@ -15,6 +15,7 @@ struct SettingsView: View {
     @Binding var currentAirportIndex: Int
 
     @State private var showAirportsList = false
+    @State private var selectedAudioPackIDs: Set<UUID> = []
 
     private let appearanceColors: [Color] = [
         Color(red: 0.91, green: 0.28, blue: 0.16),
@@ -32,7 +33,7 @@ struct SettingsView: View {
     private let audioPacks: [AudioPack] = [
         AudioPack(title: "Cold Ice", subtitle: "Medium-energy Lo-Fi", isPro: false),
         AudioPack(title: "Cloudsurfing", subtitle: "Medium-energy Lo-Fi", isPro: false),
-        AudioPack(title: "Cloudsurfing", subtitle: "Medium-energy Lo-Fi", isPro: true),
+        AudioPack(title: "Cloudsurfing", subtitle: "Medium-energy Lo-Fi", isPro: false),
         AudioPack(title: "Airport Terminal", subtitle: "Medium-energy Lo-Fi", isPro: true),
         AudioPack(title: "Retrowave", subtitle: "Medium-energy Lo-Fi", isPro: true),
         AudioPack(title: "Thunderstorms", subtitle: "Medium-energy Lo-Fi", isPro: true),
@@ -62,7 +63,7 @@ struct SettingsView: View {
             }
 
             if showAirportsList {
-                AirportsListView(showAirports: $showAirportsList, currentAirportIndex: $currentAirportIndex)
+                AirportsListView(showAirports: $showAirportsList, currentAirportIndex: $currentAirportIndex, showUpgrade: $showUpgrade)
                     .transition(.move(edge: .bottom))
                     .zIndex(1)
             }
@@ -252,21 +253,39 @@ struct SettingsView: View {
     }
 
     private var audioPacksSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                sectionTitle("Audio packs")
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Audio packs")
+                    .font(.system(size: 29.56, weight: .semibold))
+                    .foregroundStyle(themeManager.theme.foreground)
                 Text("Select up to 3")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(themeManager.theme.foreground.opacity(0.7))
+                    .foregroundStyle(themeManager.theme.foreground)
             }
 
             VStack(spacing: 10) {
                 ForEach(audioPacks) { pack in
-                    AudioPackRow(pack: pack)
+                    AudioPackRow(
+                        pack: pack,
+                        accent: themeManager.theme.foreground,
+                        isSelected: selectedAudioPackIDs.contains(pack.id)
+                    ) {
+                        toggleAudioPack(pack.id)
+                    }
                 }
             }
         }
         .padding(.horizontal, 20)
+    }
+
+    private func toggleAudioPack(_ id: UUID) {
+        if selectedAudioPackIDs.contains(id) {
+            selectedAudioPackIDs.remove(id)
+            return
+        }
+
+        guard selectedAudioPackIDs.count < 3 else { return }
+        selectedAudioPackIDs.insert(id)
     }
 
     private var premiumAudioCard: some View {
@@ -299,10 +318,12 @@ struct SettingsView: View {
 
     private var makeItYours: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Make it your own")
+            Text("MAKE IT YOUR OWN")
                 .font(.system(size: 15, weight: .medium))
                 .foregroundStyle(themeManager.theme.foreground)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 20)
+        
 
             ThemeCarousel(accent: themeManager.theme.foreground, interval: 3.0)
         }
@@ -432,42 +453,62 @@ private struct AudioPack: Identifiable {
 }
 
 private struct AudioPackRow: View {
-    @Environment(ThemeManager.self) private var themeManager
     let pack: AudioPack
+    let accent: Color
+    let isSelected: Bool
+    let onTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(themeManager.theme.foreground.opacity(0.15))
-                .frame(width: 8, height: 8)
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Circle()
+                    .strokeBorder(
+                        isSelected ? Color.white : accent.opacity(0.4),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+                    .background(Circle().fill(isSelected ? Color.clear : accent.opacity(0.12)))
+                    .frame(width: 22, height: 22)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(pack.title)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(themeManager.theme.foreground)
-                    if pack.isPro {
-                        ProBadge()
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(pack.title)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(isSelected ? Color.white : accent)
+                        if pack.isPro {
+                            Text("PRO")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(isSelected ? accent : Color.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(isSelected ? Color.white : accent)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
                     }
+                    Text(pack.subtitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : accent.opacity(0.65))
                 }
-                Text(pack.subtitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(themeManager.theme.foreground.opacity(0.6))
+
+                Spacer()
+
+                Circle()
+                    .fill(isSelected ? Color.white : accent)
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(isSelected ? accent : Color.white)
+                            .offset(x: 1.5)
+                    )
             }
-
-            Spacer()
-
-            Image(systemName: "play.fill")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(themeManager.theme.background)
-                .frame(width: 22, height: 22)
-                .background(themeManager.theme.foreground)
-                .clipShape(Circle())
+            .padding(.horizontal, 16)
+            .frame(height: 69)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(isSelected ? accent : accent.opacity(0.1))
+            )
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 14)
-        .background(themeManager.theme.foreground.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .buttonStyle(.plain)
     }
 }
 
@@ -578,42 +619,37 @@ private struct ThemeCarousel: View {
     let accent: Color
     let interval: Double
 
-    @State private var currentIndex = 0
-    @State private var autoTimer: Timer?
-
-    private let airports = ["LAX", "JFK", "SFO", "ORD", "LHR", "LGA"]
+    private let imageNames = ["carousel1", "carousel2", "carousel3", "carousel4"]
+    @State private var offset: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 14) {
-            TabView(selection: $currentIndex) {
-                ForEach(AppTheme.all.indices, id: \.self) { index in
-                    MiniAppScreen(
-                        theme: AppTheme.all[index],
-                        airportCode: airports[index % airports.count]
-                    )
-                    .tag(index)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 454)
+        GeometryReader { proxy in
+            let cardWidth = proxy.size.width * 0.64
+            let cardHeight: CGFloat = 520
+            let spacing: CGFloat = 16
+            let stride = cardWidth + spacing
+            let totalWidth = stride * CGFloat(imageNames.count)
 
-            HStack(spacing: 6) {
-                ForEach(AppTheme.all.indices, id: \.self) { index in
-                    Capsule()
-                        .fill(accent.opacity(index == currentIndex ? 1 : 0.3))
-                        .frame(width: index == currentIndex ? 18 : 6, height: 6)
-                        .animation(.easeInOut(duration: 0.25), value: currentIndex)
+            HStack(spacing: spacing) {
+                ForEach(0..<(imageNames.count * 2), id: \.self) { index in
+                    let name = imageNames[index % imageNames.count]
+                    Image(name)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: cardWidth, height: cardHeight)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 28))
+                }
+            }
+            .offset(x: offset)
+            .onAppear {
+                offset = 0
+                withAnimation(.linear(duration: interval * Double(imageNames.count)).repeatForever(autoreverses: false)) {
+                    offset = -totalWidth
                 }
             }
         }
-        .onAppear {
-            autoTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    currentIndex = (currentIndex + 1) % AppTheme.all.count
-                }
-            }
-        }
-        .onDisappear { autoTimer?.invalidate() }
+        .frame(height: 520)
     }
 }
 

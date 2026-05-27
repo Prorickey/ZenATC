@@ -69,12 +69,17 @@ struct ContentView: View {
                     showUpgrade: $showUpgrade
                 )
                 .transition(.move(edge: .bottom))
+                .zIndex(4)
             }
 
             if showAirports {
-                AirportsListView(showAirports: $showAirports, currentAirportIndex: $audio.currentAirportIndex)
-                    .transition(.move(edge: .top))
-                    .zIndex(2)
+                AirportsListView(
+                    showAirports: $showAirports,
+                    currentAirportIndex: $audio.currentAirportIndex,
+                    showUpgrade: $showUpgrade
+                )
+                .transition(.move(edge: .top))
+                .zIndex(2)
             }
 
             if !hasCompletedOnboarding {
@@ -83,6 +88,7 @@ struct ContentView: View {
                     .zIndex(10)
             }
         }
+        .onAppear { hasCompletedOnboarding = false }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showUpgrade)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirports)
