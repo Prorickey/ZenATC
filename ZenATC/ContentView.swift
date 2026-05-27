@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var showAirports = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @State private var textDragY: CGFloat = 0
+    @State private var isSliderActive = false
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
@@ -42,6 +43,8 @@ struct ContentView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
+                .offset(y: showTrackPicker ? -20 : 0)
+                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showTrackPicker)
                 .onChange(of: audio.currentAirportIndex) { audio.reloadATC() }
 
                 BottomControlsView(
@@ -49,7 +52,8 @@ struct ContentView: View {
                     isPlaying: $audio.isPlaying,
                     tracks: tracks,
                     selectedTrackIndex: $audio.selectedTrackIndex,
-                    showTrackPicker: $showTrackPicker
+                    showTrackPicker: $showTrackPicker,
+                    isSliderActive: $isSliderActive
                 )
                 .onChange(of: audio.selectedTrackIndex) { audio.reloadLofi() }
             }
@@ -96,6 +100,7 @@ struct ContentView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: 12)
                 .onEnded { value in
+                    guard !isSliderActive else { return }
                     let dy = value.translation.height
                     let predicted = value.predictedEndTranslation.height
                     if showTrackPicker, dy > 60 {
@@ -105,7 +110,7 @@ struct ContentView: View {
                     } else if !showTrackPicker, dy < -40 || predicted < -80 {
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
                             showTrackPicker = true
-                            textDragY = -50
+                            textDragY = -113
                         }
                     }
                 }
@@ -336,7 +341,7 @@ private struct AirportCarouselView: View {
     var body: some View {
         TabView(selection: $currentIndex) {
             ForEach(airports.indices, id: \.self) { index in
-                AirportPageView(airport: airports[index], dragY: showTrackPicker ? -50 : dragY)
+                AirportPageView(airport: airports[index], dragY: showTrackPicker ? -113 : dragY)
                     .tag(index)
             }
         }
@@ -344,26 +349,15 @@ private struct AirportCarouselView: View {
         .allowsHitTesting(true)
         .simultaneousGesture(
             DragGesture(minimumDistance: 8)
-                .onChanged { value in
-                    guard !showTrackPicker else { return }
-                    let dy = value.translation.height
-                    let isVertical = abs(dy) > abs(value.translation.width)
-                    guard isVertical, dy < 0 else { return }
-                    dragY = max(dy, -80)
-                }
                 .onEnded { value in
                     guard !showTrackPicker else { return }
                     let dy = value.translation.height
                     let predicted = value.predictedEndTranslation.height
                     if dy < -40 || predicted < -80 {
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                            dragY = -50
+                            dragY = -113
                         }
                         onOpen()
-                    } else {
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            dragY = 0
-                        }
                     }
                 }
         )
@@ -392,11 +386,11 @@ private struct AirportPageView: View {
             let baseScaleY = referenceCapHeight > 0
                 ? (geo.size.height / referenceCapHeight) * defaultHeightFraction
                 : 1
-            let clampedDragY = min(max(dragY, -50), 0)
+            let clampedDragY = min(max(dragY, -113), 0)
             let stretchDelta = naturalTextHeight > 0 ? clampedDragY / naturalTextHeight : 0
-            let finalScaleY = max(baseScaleY * 0.85, baseScaleY + stretchDelta)
-            // posY derived from finalScaleY so top edge stays pinned even at the cap.
-            let posY = geo.size.height / 2 + naturalTextHeight * (finalScaleY - baseScaleY) / 2
+            let finalScaleY = max(baseScaleY * 0.6625, baseScaleY + stretchDelta)
+            // posY uses referenceCapHeight (visible glyph) so the cap's top stays pinned.
+            let posY = geo.size.height / 2 + referenceCapHeight * (finalScaleY - baseScaleY) / 2
 
             Text(airport.code.uppercased())
                 .font(.airportCode(size: 200))
@@ -429,17 +423,18 @@ private struct BottomControlsView: View {
     let tracks: [LofiTrack]
     @Binding var selectedTrackIndex: Int
     @Binding var showTrackPicker: Bool
+    @Binding var isSliderActive: Bool
     @Environment(ThemeManager.self) private var themeManager
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: 0) {
-                MixerSliderView(balance: $balance)
+                MixerSliderView(balance: $balance, isSliderActive: $isSliderActive)
                     .padding(.horizontal, 20)
 
                 PlayPauseButton(isPlaying: $isPlaying)
                     .padding(.top, 16)
             }
-            .offset(y: showTrackPicker ? -50 : 0)
+            .offset(y: showTrackPicker ? -80 : 0)
             .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showTrackPicker)
 
             // Picker and title share a fixed-height ZStack so no layout animation
@@ -584,9 +579,10 @@ private struct TextWidthKey: PreferenceKey {
 
 private struct MixerSliderView: View {
     @Binding var balance: Double
+    @Binding var isSliderActive: Bool
     @Environment(ThemeManager.self) private var themeManager
     @State private var isDragging = false
-    @State private var hasMoved = false
+    @State private var dragStartBalance: Double? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -654,14 +650,12 @@ private struct MixerSliderView: View {
                     Image(systemName: "headphones")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.white)
-                        .opacity(0.65)
                         .frame(width: iconFrame)
                         .offset(x: iconInset)
 
                     Image(systemName: "airplane")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.white)
-                        .opacity(0.65)
                         .frame(width: iconFrame)
                         .offset(x: geo.size.width - iconInset - iconFrame)
                 }
@@ -684,45 +678,29 @@ private struct MixerSliderView: View {
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
                         isDragging = true
-                        if !hasMoved {
-                            let distance = hypot(value.translation.width, value.translation.height)
-                            if distance > 6 { hasMoved = true }
-                        }
-
-                        if hasMoved {
-                            let newValue = valueFromLocation(
-                                value.location.x,
-                                width: geo.size.width,
-                                inset: trackInset,
-                                thumbWidth: thumbWidth
-                            )
-                            balance = min(max(newValue, 0), 1)
-                        } else {
-                            let newValue = valueFromLocation(
-                                value.location.x,
-                                width: geo.size.width,
-                                inset: trackInset,
-                                thumbWidth: thumbWidth
-                            )
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                                balance = min(max(newValue, 0), 1)
+                        isSliderActive = true
+                        if dragStartBalance == nil {
+                            let thumbLeft = trackInset + CGFloat(balance) * usableRange
+                            let thumbRight = thumbLeft + thumbWidth
+                            if value.startLocation.x < thumbLeft || value.startLocation.x > thumbRight {
+                                let targetLeft = value.startLocation.x - (thumbWidth / 2)
+                                balance = min(max(Double((targetLeft - trackInset) / usableRange), 0), 1)
                             }
+                            dragStartBalance = balance
                         }
+                        let start = dragStartBalance ?? balance
+                        let delta = Double(value.translation.width / usableRange)
+                        balance = min(max(start + delta, 0), 1)
                     }
-                    .onEnded { value in
+                    .onEnded { _ in
                         isDragging = false
-                        hasMoved = false
+                        isSliderActive = false
+                        dragStartBalance = nil
                     }
             )
             .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
         }
         .frame(height: 36 * 1.5)
-    }
-
-    private func valueFromLocation(_ x: CGFloat, width: CGFloat, inset: CGFloat, thumbWidth: CGFloat) -> Double {
-        let usable = max(width - (inset * 2) - thumbWidth, 1)
-        let clamped = min(max(x - inset - (thumbWidth / 2), 0), usable)
-        return Double(clamped / usable)
     }
 }
 
