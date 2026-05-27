@@ -2,31 +2,41 @@
 //  ZenATCApp.swift
 //  ZenATC
 //
-//  Created by Trevor Bedson on 5/26/26.
-//
 
 import SwiftUI
-import SwiftData
+import CoreGraphics
+import CoreText
 
 @main
 struct ZenATCApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    init() {
+        FontLoader.registerAll()
+        // Make wheel pickers transparent so they sit on the app's background naturally.
+        UIPickerView.appearance().backgroundColor = .clear
+    }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(sharedModelContainer)
+    }
+}
+
+enum FontLoader {
+    static func registerAll() {
+        load("ABCSchengenCoreVariable-Trial")
+        load("GT-Standard-Trial-VF")
+    }
+
+    private static func load(_ assetName: String) {
+        guard let asset = NSDataAsset(name: assetName),
+              let provider = CGDataProvider(data: asset.data as CFData),
+              let font = CGFont(provider) else {
+            return
+        }
+        CTFontManagerRegisterGraphicsFont(font, nil)
+        #if DEBUG
+        print("[Font] Registered: \(font.postScriptName as String? ?? "unknown")")
+        #endif
     }
 }
