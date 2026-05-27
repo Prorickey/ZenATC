@@ -25,8 +25,8 @@ struct OnboardingView: View {
                     buttonIcon: "play.fill",
                     buttonLabel: "Start the lofi"
                 ) {
-                    audio.balance = 0
-                    audio.isPlaying = true
+                    audio.fadeToBalance(0)
+                    audio.fadeInPlayback()
                     step += 1
                 }
                 .transition(.asymmetric(
@@ -40,7 +40,7 @@ struct OnboardingView: View {
                     buttonIcon: "airplane",
                     buttonLabel: "Add in ATC"
                 ) {
-                    audio.balance = 0.5
+                    audio.fadeToBalance(0.5)
                     step += 1
                 }
                 .transition(.asymmetric(
@@ -70,6 +70,9 @@ struct OnboardingView: View {
         }
         .animation(.spring(response: 0.42, dampingFraction: 0.86), value: step)
         .animation(.easeInOut(duration: 0.75), value: showSplash)
+        .task {
+            await audio.preload()
+        }
         .onAppear {
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
                 showSplash = false

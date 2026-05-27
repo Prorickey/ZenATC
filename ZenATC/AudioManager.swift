@@ -11,13 +11,21 @@ let backendBaseURL = URL(string: "https://zenatc.bedson.tech")!
 @Observable
 final class AudioManager {
     var isPlaying = false {
-        didSet { isPlaying ? startPlayback() : pausePlayback() }
+        didSet {
+            guard !suppressObservers else { return }
+            isPlaying ? startPlayback() : pausePlayback()
+        }
     }
 
     // balance: 0 = full lofi (headphones), 1 = full ATC (airplane)
     var balance: Double = 0.5 {
-        didSet { updateVolumes() }
+        didSet {
+            guard !suppressObservers else { return }
+            updateVolumes()
+        }
     }
+
+    private var suppressObservers = false
 
     var currentAirportIndex = 0
     var selectedTrackIndex = 0
@@ -28,6 +36,7 @@ final class AudioManager {
     private var lofiPlayer: AVPlayer?
     private var lofiItem: AVPlayerItem?
     private var lofiLoopObserver: Any?
+    private var lofiFadeTimer: Timer?
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
@@ -35,6 +44,31 @@ final class AudioManager {
 
     init() {
         configureSession()
+    }
+
+    @MainActor
+    func preload() async {
+        loadATC()
+
+        let filename = tracks[selectedTrackIndex].filename
+        let streamURL = await resolveLofiURL(filename: filename)
+
+        tearDownLofi()
+
+        lofiItem = AVPlayerItem(url: streamURL)
+        lofiPlayer = AVPlayer(playerItem: lofiItem)
+        lofiPlayer?.volume = 0
+
+        lofiLoopObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: lofiItem,
+            queue: .main
+        ) { [weak self] _ in
+            self?.lofiPlayer?.seek(to: .zero)
+            if self?.isPlaying == true { self?.lofiPlayer?.play() }
+        }
+
+        lofiPlayer?.automaticallyWaitsToMinimizeStalling = true
     }
 
     // MARK: - Private
@@ -139,5 +173,65 @@ final class AudioManager {
     private func updateVolumes() {
         atcPlayer?.volume = min(1.0, Float(balance) * 4.0)
         lofiPlayer?.volume = Float(1.0 - balance)
+    }
+
+    private static let fadeDuration: TimeInterval = 1.5
+    private static let fadeSteps = 30
+
+    func fadeInPlayback() {
+        let atcTarget = min(1.0, Float(balance) * 4.0)
+        let lofiTarget = Float(1.0 - balance)
+
+        atcPlayer?.volume = 0
+        lofiPlayer?.volume = 0
+
+        if atcPlayer == nil { loadATC() }
+        atcPlayer?.play()
+        if lofiPlayer == nil {
+            Task { await loadAndPlayLofi() }
+        } else {
+            lofiPlayer?.play()
+        }
+
+        suppressObservers = true
+        isPlaying = true
+        suppressObservers = false
+
+        atcPlayer?.setVolume(atcTarget, fadeDuration: Self.fadeDuration)
+        fadeLofiVolume(to: lofiTarget)
+    }
+
+    func fadeToBalance(_ newBalance: Double) {
+        suppressObservers = true
+        balance = newBalance
+        suppressObservers = false
+
+        let atcTarget = min(1.0, Float(newBalance) * 4.0)
+        let lofiTarget = Float(1.0 - newBalance)
+
+        atcPlayer?.setVolume(atcTarget, fadeDuration: Self.fadeDuration)
+        fadeLofiVolume(to: lofiTarget)
+    }
+
+    private func fadeLofiVolume(to target: Float) {
+        lofiFadeTimer?.invalidate()
+
+        guard let player = lofiPlayer else { return }
+
+        let startVolume = player.volume
+        let interval = Self.fadeDuration / Double(Self.fadeSteps)
+        let delta = (target - startVolume) / Float(Self.fadeSteps)
+        var step = 0
+
+        lofiFadeTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] timer in
+            step += 1
+            if step >= Self.fadeSteps {
+                player.volume = target
+                timer.invalidate()
+                self?.lofiFadeTimer = nil
+            } else {
+                player.volume = startVolume + delta * Float(step)
+            }
+        }
     }
 }
