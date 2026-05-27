@@ -8,24 +8,15 @@ import CoreGraphics
 import CoreText
 import FirebaseCore
 
-class AppDelegate: NSObject, UIApplicationDelegate {
-    func application(
-        _ application: UIApplication,
-        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
-    ) -> Bool {
-        FirebaseApp.configure()
-        return true
-    }
-}
-
 @main
 struct ZenATCApp: App {
-    @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
-
-    @State private var authManager = AuthManager()
-    @State private var purchaseManager = PurchaseManager()
+    @State private var authManager: AuthManager
+    @State private var purchaseManager: PurchaseManager
 
     init() {
+        FirebaseApp.configure()
+        _authManager = State(wrappedValue: AuthManager())
+        _purchaseManager = State(wrappedValue: PurchaseManager())
         FontLoader.registerAll()
         UIPickerView.appearance().backgroundColor = .clear
     }
