@@ -135,7 +135,7 @@ private struct LiveIndicatorView: View {
     private let liveDotSize: CGFloat = 10
     private let radarDiameter: CGFloat = 22
     private let pauseBarWidth: CGFloat = 4
-    private let pauseBarHeight: CGFloat = 12
+    private let pauseBarHeight: CGFloat = 14
     private let pauseBarSpacing: CGFloat = 4
     private let sweepPeriod: Double = 3.5
 
@@ -250,7 +250,7 @@ private struct AnimatedStatusText: View {
         HStack(spacing: 0) {
             ForEach(letters.indices, id: \.self) { index in
                 Text(String(letters[index]))
-                    .font(.airportCode(size: 18))
+                    .font(.airportCode(size: 20))
                     .fontWeight(.heavy)
                     .foregroundStyle(color)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -289,11 +289,11 @@ private struct RightIconsView: View {
             Button {
                 showSettings = true
             } label: {
-                Image(systemName: "gearshape.fill")
+                Image(systemName: "slider.horizontal.3")
             }
         }
         .font(.system(size: 20))
-        .scaleEffect(x: 0.95, y: 1.0)
+        .scaleEffect(x: 0.88, y: 1.0)
         .foregroundStyle(themeManager.theme.foreground)
         .buttonStyle(.plain)
     }
