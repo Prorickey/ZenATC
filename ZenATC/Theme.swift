@@ -85,7 +85,28 @@ extension UIFont {
 
     static func schengenCore(size: CGFloat) -> UIFont {
         UIFont(name: "ABCSchengenCoreVariable-Trial", size: size)
-            ?? UIFont.systemFont(ofSize: size, weight: .bold)
+            ?? UIFont.systemFont(ofSize: size, weight: .black)
+    }
+
+    // ABC Gravity Cyrillic Upright Variable — weight 900, XXX Compressed style.
+    // Add "ABCGravityCyrillicUprightVariable-Trial.ttf" to the bundle and Info.plist
+    // to activate. Verify the PostScript name and axis ranges with `fc-list` or
+    // Font Book once you have the file.
+    static func abcGravity(size: CGFloat) -> UIFont {
+        let postScriptName = "ABCGravityCyrillicUprightVariable-Trial"
+        guard let base = UIFont(name: postScriptName, size: size) else {
+            return UIFont.systemFont(ofSize: size, weight: .black)
+        }
+        // 'wght' = 2003265652  (900 = Black)
+        // 'wdth' = 2003072104  (Compressed; tune value once you inspect axis ranges)
+        let variations: [Int: Double] = [
+            2003265652: 900,
+            2003072104: 50,
+        ]
+        let descriptor = base.fontDescriptor.addingAttributes([
+            UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): variations
+        ])
+        return UIFont(descriptor: descriptor, size: size)
     }
 }
 
@@ -100,6 +121,10 @@ extension Font {
 
     static func schengenCore(size: CGFloat) -> Font {
         Font.custom("ABCSchengenCoreVariable-Trial", size: size)
+    }
+
+    static func abcGravity(size: CGFloat) -> Font {
+        Font(UIFont.abcGravity(size: size))
     }
 
     static func airportCode(size: CGFloat) -> Font {

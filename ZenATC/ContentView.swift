@@ -14,7 +14,8 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showUpgrade = false
     @State private var showAirports = false
-    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
+    @State private var textDragY: CGFloat = 0
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
@@ -26,7 +27,7 @@ struct ContentView: View {
             themeManager.theme.background.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                TopBarView(showSettings: $showSettings, showAirports: $showAirports)
+                TopBarView(showSettings: $showSettings, showAirports: $showAirports, isPlaying: $audio.isPlaying)
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -34,7 +35,8 @@ struct ContentView: View {
 
                 AirportCarouselView(
                     airports: airports,
-                    currentIndex: $audio.currentAirportIndex
+                    currentIndex: $audio.currentAirportIndex,
+                    dragY: $textDragY
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
@@ -47,6 +49,7 @@ struct ContentView: View {
                     selectedTrackIndex: $audio.selectedTrackIndex,
                     showTrackPicker: $showTrackPicker
                 )
+                .offset(y: textDragY)
                 .onChange(of: audio.selectedTrackIndex) { audio.reloadLofi() }
             }
 
@@ -88,7 +91,8 @@ struct ContentView: View {
                     .zIndex(10)
             }
         }
-        .onAppear { hasCompletedOnboarding = false }
+
+        .onAppear { hasCompletedOnboarding = true }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showUpgrade)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirports)
@@ -102,16 +106,18 @@ struct ContentView: View {
 private struct TopBarView: View {
     @Binding var showSettings: Bool
     @Binding var showAirports: Bool
+    @Binding var isPlaying: Bool
     @Environment(ThemeManager.self) private var themeManager
+    private let pausedColor = Color(red: 0.878, green: 0.298, blue: 0.149)
 
     var body: some View {
         HStack(spacing: 10) {
-            LiveIndicatorView()
+            LiveIndicatorView(isPlaying: isPlaying, pausedColor: pausedColor)
 
-            Text("LIVE")
-                .font(.gtStandard(size: 18))
-                .fontWeight(.semibold)
-                .foregroundStyle(themeManager.theme.foreground)
+            Text(isPlaying ? "LIVE" : "Paused")
+                .font(.airportCode(size: 18))
+                .fontWeight(.heavy)
+                .foregroundStyle(isPlaying ? themeManager.theme.foreground : pausedColor)
 
             Spacer()
 
@@ -123,26 +129,60 @@ private struct TopBarView: View {
 // MARK: - Live Indicator
 
 private struct LiveIndicatorView: View {
+    let isPlaying: Bool
+    let pausedColor: Color
     @Environment(ThemeManager.self) private var themeManager
     @State private var isPulsing = false
+    private let liveDotSize: CGFloat = 14
+    private let pausedDotSize: CGFloat = 22
+    private let pauseBarWidth: CGFloat = 4
+    private let pauseBarHeight: CGFloat = 12
+    private let pauseBarSpacing: CGFloat = 4
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(themeManager.theme.foreground.opacity(0.5))
-                .frame(width: 32, height: 32)
-                .scaleEffect(isPulsing ? 1.15 : 0.85)
-                .opacity(isPulsing ? 0.3 : 0.5)
-                .animation(
-                    .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
-                    value: isPulsing
-                )
+            if isPlaying {
+                Circle()
+                    .stroke(themeManager.theme.foreground.opacity(0.55), lineWidth: 2)
+                    .frame(width: 28, height: 28)
+                    .scaleEffect(isPulsing ? 2.6 : 0.5)
+                    .opacity(isPulsing ? 0 : 0.8)
+                    .animation(
+                        .easeOut(duration: 1.4).repeatForever(autoreverses: false),
+                        value: isPulsing
+                    )
+
+                Circle()
+                    .stroke(themeManager.theme.foreground.opacity(0.4), lineWidth: 2)
+                    .frame(width: 28, height: 28)
+                    .scaleEffect(isPulsing ? 2.0 : 0.4)
+                    .opacity(isPulsing ? 0 : 0.7)
+                    .animation(
+                        .easeOut(duration: 1.4).repeatForever(autoreverses: false).delay(0.25),
+                        value: isPulsing
+                    )
+            }
 
             Circle()
-                .fill(themeManager.theme.foreground)
-                .frame(width: 14, height: 14)
+                .fill(isPlaying ? themeManager.theme.foreground : pausedColor)
+                .frame(width: isPlaying ? liveDotSize : pausedDotSize,
+                       height: isPlaying ? liveDotSize : pausedDotSize)
+
+            HStack(spacing: pauseBarSpacing) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .frame(width: pauseBarWidth, height: pauseBarHeight)
+                RoundedRectangle(cornerRadius: 1.5)
+                    .frame(width: pauseBarWidth, height: pauseBarHeight)
+            }
+            .foregroundStyle(Color.white)
+            .opacity(isPlaying ? 0 : 1)
+            .scaleEffect(isPlaying ? 0.3 : 1)
         }
         .onAppear { isPulsing = true }
+        .onChange(of: isPlaying) { _, newValue in
+            if newValue { isPulsing = true }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isPlaying)
     }
 }
 
@@ -186,29 +226,65 @@ private struct RightIconsView: View {
 private struct AirportCarouselView: View {
     let airports: [Airport]
     @Binding var currentIndex: Int
+    @Binding var dragY: CGFloat
+    @State private var isVerticalDragging = false
 
     var body: some View {
         TabView(selection: $currentIndex) {
             ForEach(airports.indices, id: \.self) { index in
-                AirportPageView(airport: airports[index])
+                AirportPageView(airport: airports[index], dragY: dragY)
                     .tag(index)
             }
         }
         .tabViewStyle(.page(indexDisplayMode: .never))
+        .allowsHitTesting(true)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 8)
+                .onChanged { value in
+                    let vertical = abs(value.translation.height) > 4
+                    let isVertical = vertical && abs(value.translation.height) > abs(value.translation.width)
+                    if isVertical || isVerticalDragging {
+                        isVerticalDragging = true
+                        dragY = min(max(value.translation.height, -30), 30)
+                    }
+                }
+                .onEnded { _ in
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                        dragY = 0
+                    }
+                    isVerticalDragging = false
+                }
+        )
     }
 }
 
 private struct AirportPageView: View {
     let airport: Airport
+    let dragY: CGFloat
     @Environment(ThemeManager.self) private var themeManager
     @State private var naturalTextWidth: CGFloat = 0
+    @State private var naturalTextHeight: CGFloat = 0
 
-    private let referenceCapHeight: CGFloat = UIFont.schengenCore(size: 200).capHeight
+    // ── Tune default letter size here ──────────────────────────────────────
+    private let defaultWidthFraction: CGFloat  = 0.98   // fraction of container width
+    private let defaultHeightFraction: CGFloat = 0.95   // fraction of container height
+    // ───────────────────────────────────────────────────────────────────────
+
+    private let referenceCapHeight: CGFloat = UIFont.abcGravity(size: 200).capHeight
 
     var body: some View {
         GeometryReader { geo in
-            let scaleX = naturalTextWidth > 0 ? geo.size.width / naturalTextWidth - 0.05 : 1
-            let scaleY = referenceCapHeight > 0 ? geo.size.height / referenceCapHeight - 0.15 : 1
+            let baseScaleX = naturalTextWidth > 0
+                ? (geo.size.width / naturalTextWidth) * defaultWidthFraction
+                : 1
+            let baseScaleY = referenceCapHeight > 0
+                ? (geo.size.height / referenceCapHeight) * defaultHeightFraction
+                : 1
+            let clampedDragY = min(max(dragY, -30), 30)
+            let stretchDelta = naturalTextHeight > 0 ? clampedDragY / naturalTextHeight : 0
+            let finalScaleY = max(baseScaleY * 0.85, baseScaleY + stretchDelta)
+            // posY derived from finalScaleY so top edge stays pinned even at the cap.
+            let posY = geo.size.height / 2 + naturalTextHeight * (finalScaleY - baseScaleY) / 2
 
             Text(airport.code.uppercased())
                 .font(.airportCode(size: 200))
@@ -221,12 +297,13 @@ private struct AirportPageView: View {
                         Color.clear.onAppear {
                             if naturalTextWidth == 0 {
                                 naturalTextWidth = proxy.size.width
+                                naturalTextHeight = proxy.size.height
                             }
                         }
                     }
                 )
-                .scaleEffect(x: scaleX, y: scaleY, anchor: .center)
-                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+                .scaleEffect(x: baseScaleX, y: finalScaleY, anchor: .center)
+                .position(x: geo.size.width / 2, y: posY)
                 .opacity(naturalTextWidth == 0 ? 0 : 1)
         }
     }
@@ -271,7 +348,8 @@ private struct BottomControlsView: View {
                     }
                 } label: {
                     Text(tracks[selectedTrackIndex].name)
-                        .font(.gtStandard(size: 34.77))
+                        .font(.airportCode(size: 34.77))
+                        .fontWeight(.heavy)
                         .kerning(0)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(themeManager.theme.foreground)
@@ -325,7 +403,8 @@ private struct InlineTrackPicker: View {
                     let isSelected = i == selectedIndex
 
                     Text(tracks[i].name)
-                        .font(.gtStandard(size: isSelected ? 34.77 : size))
+                        .font(.airportCode(size: isSelected ? 34.77 : size))
+                        .fontWeight(.heavy)
                         .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
@@ -396,8 +475,8 @@ private struct MixerSliderView: View {
     var body: some View {
         GeometryReader { geo in
             let scale: CGFloat = 1.5
-            let trackHeight: CGFloat = (isDragging ? 36 : 29) * scale
-            let thumbWidth: CGFloat = (isDragging ? 66 : 62) * scale
+            let trackHeight: CGFloat = 29 * scale
+            let thumbWidth: CGFloat = (isDragging ? 66 : 62 * 0.7) * scale
             let thumbHeight: CGFloat = (isDragging ? 28 : 24) * scale
             let trackInset: CGFloat = 2 * scale
             let iconInset: CGFloat = 14 * scale
@@ -421,7 +500,6 @@ private struct MixerSliderView: View {
             let baseCenter = baseThumbLeft + (thumbWidth / 2)
             let desiredCenter = baseCenter + (targetCenter - baseCenter) * smoothProgress
             let thumbX = desiredCenter - (thumbWidth / 2)
-            let bumpScale = 1 + 0.04 * smoothProgress
 
             ZStack(alignment: .leading) {
                 Capsule()
@@ -449,9 +527,8 @@ private struct MixerSliderView: View {
                         RoundedRectangle(cornerRadius: thumbHeight / 2)
                             .frame(width: clipWidth, height: thumbHeight)
                             .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
-                            .animation(.easeOut(duration: 0.40), value: smoothProgress)
+                            .animation(.easeOut(duration: 0.70), value: smoothProgress)
                     }
-                    .scaleEffect(x: 1, y: bumpScale, anchor: .center)
                     .offset(x: thumbX)
 
                 // White icons masked to the pill shape — visible only where pill covers them
@@ -481,7 +558,6 @@ private struct MixerSliderView: View {
                                 .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
                                 .animation(.easeOut(duration: 0.40), value: smoothProgress)
                         }
-                        .scaleEffect(x: 1, y: bumpScale, anchor: .center)
                         .offset(x: thumbX)
                 }
             }
@@ -496,15 +572,28 @@ private struct MixerSliderView: View {
                             let distance = hypot(value.translation.width, value.translation.height)
                             if distance > 6 { hasMoved = true }
                         }
-                        let newValue = valueFromLocation(
-                            value.location.x,
-                            width: geo.size.width,
-                            inset: trackInset,
-                            thumbWidth: thumbWidth
-                        )
-                        balance = min(max(newValue, 0), 1)
+
+                        if hasMoved {
+                            let newValue = valueFromLocation(
+                                value.location.x,
+                                width: geo.size.width,
+                                inset: trackInset,
+                                thumbWidth: thumbWidth
+                            )
+                            balance = min(max(newValue, 0), 1)
+                        } else {
+                            let newValue = valueFromLocation(
+                                value.location.x,
+                                width: geo.size.width,
+                                inset: trackInset,
+                                thumbWidth: thumbWidth
+                            )
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                balance = min(max(newValue, 0), 1)
+                            }
+                        }
                     }
-                    .onEnded { _ in
+                    .onEnded { value in
                         isDragging = false
                         hasMoved = false
                     }
