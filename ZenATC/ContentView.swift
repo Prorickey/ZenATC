@@ -445,9 +445,10 @@ private struct BottomControlsView: View {
     @Binding var showTrackPicker: Bool
     @Binding var isSliderActive: Bool
     @Environment(ThemeManager.self) private var themeManager
-    @Namespace private var pickerNS
 
     private static let pickerSpring: Animation = .spring(response: 0.55, dampingFraction: 0.85)
+    private static let fadeDuration: Double = 0.25
+    private static let fadeStagger: Double = 0.2
 
     var body: some View {
         VStack(spacing: 0) {
@@ -467,17 +468,21 @@ private struct BottomControlsView: View {
                     selectedIndex: $selectedTrackIndex,
                     isExpanded: showTrackPicker,
                     onConfirm: {
-                        withAnimation(Self.pickerSpring) {
+                        withAnimation(.easeInOut(duration: Self.fadeDuration)) {
                             showTrackPicker = false
                         }
-                    },
-                    namespace: pickerNS
+                    }
                 )
                 .offset(y: -70)
+                .opacity(showTrackPicker ? 1 : 0)
+                .animation(
+                    .easeInOut(duration: Self.fadeDuration).delay(showTrackPicker ? Self.fadeStagger : 0),
+                    value: showTrackPicker
+                )
                 .allowsHitTesting(showTrackPicker)
 
                 Button {
-                    withAnimation(Self.pickerSpring) {
+                    withAnimation(.easeInOut(duration: Self.fadeDuration)) {
                         showTrackPicker = true
                     }
                 } label: {
@@ -487,10 +492,13 @@ private struct BottomControlsView: View {
                         .kerning(0)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(themeManager.theme.foreground)
-                        .matchedGeometryEffect(id: "selectedSong", in: pickerNS, isSource: !showTrackPicker)
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
                 .opacity(showTrackPicker ? 0 : 1)
+                .animation(
+                    .easeInOut(duration: Self.fadeDuration).delay(showTrackPicker ? 0 : Self.fadeStagger),
+                    value: showTrackPicker
+                )
                 .offset(y: -18)
                 .allowsHitTesting(!showTrackPicker)
             }
@@ -508,7 +516,6 @@ private struct InlineTrackPicker: View {
     @Binding var selectedIndex: Int
     let isExpanded: Bool
     let onConfirm: () -> Void
-    let namespace: Namespace.ID
     @Environment(ThemeManager.self) private var themeManager
 
     private let itemHeight: CGFloat = 52
@@ -541,52 +548,32 @@ private struct InlineTrackPicker: View {
                     let opacity = max(0.15, 1.0 - dist * 0.55)
                     let fits = (textWidths[origIndex] ?? 0) <= availableWidth
                     let isSelected = origIndex == selectedIndex
-                    let springOutOffset: CGFloat = -CGFloat(pos - selectedDisplayPos) * itemHeight
 
-                    if isSelected {
-                        Text(tracks[origIndex].name)
-                            .font(.airportCode(size: 34.77))
-                            .fontWeight(.heavy)
-                            .foregroundStyle(themeManager.theme.foreground)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .background(
-                                GeometryReader { proxy in
-                                    Color.clear.preference(key: TextWidthKey.self, value: [origIndex: proxy.size.width])
-                                }
-                            )
-                            .frame(height: fits ? itemHeight : 0)
-                            .frame(maxWidth: .infinity)
-                            .opacity(fits && isExpanded ? 1 : 0)
-                            .matchedGeometryEffect(id: "selectedSong", in: namespace, isSource: isExpanded)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                if dragOffset == 0 { onConfirm() }
+                    Text(tracks[origIndex].name)
+                        .font(.airportCode(size: isSelected ? 34.77 : size))
+                        .fontWeight(.heavy)
+                        .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: TextWidthKey.self, value: [origIndex: proxy.size.width])
                             }
-                    } else {
-                        Text(tracks[origIndex].name)
-                            .font(.airportCode(size: size))
-                            .fontWeight(.heavy)
-                            .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: false)
-                            .background(
-                                GeometryReader { proxy in
-                                    Color.clear.preference(key: TextWidthKey.self, value: [origIndex: proxy.size.width])
-                                }
-                            )
-                            .frame(height: fits ? itemHeight : 0)
-                            .frame(maxWidth: .infinity)
-                            .opacity(fits && isExpanded ? 1 : 0)
-                            .offset(y: isExpanded ? 0 : springOutOffset)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
+                        )
+                        .frame(height: fits ? itemHeight : 0)
+                        .frame(maxWidth: .infinity)
+                        .opacity(fits ? 1 : 0)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if isSelected && dragOffset == 0 {
+                                onConfirm()
+                            } else {
                                 withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
                                     selectedIndex = origIndex
                                     dragOffset = 0
                                 }
                             }
-                    }
+                        }
                 }
             }
             .offset(y: baseOffset + dragOffset)
@@ -604,11 +591,13 @@ private struct InlineTrackPicker: View {
                 .onEnded { value in
                     let raw = Double(selectedDisplayPos) - Double(value.predictedEndTranslation.height) / Double(itemHeight)
                     let newPos = max(0, min(Int(round(raw)), displayOrder.count - 1))
-                    withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                    withAnimation(.spring(response: 0.40, dampingFraction: 0.85)) {
                         selectedIndex = displayOrder[newPos]
                         dragOffset = 0
                     }
-                    onConfirm()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        onConfirm()
+                    }
                 }
         )
         .sensoryFeedback(.selection, trigger: selectedIndex)
@@ -738,7 +727,12 @@ private struct MixerSliderView: View {
                             let thumbRight = thumbLeft + thumbWidth
                             if value.startLocation.x < thumbLeft || value.startLocation.x > thumbRight {
                                 let targetLeft = value.startLocation.x - (thumbWidth / 2)
-                                balance = min(max(Double((targetLeft - trackInset) / usableRange), 0), 1)
+                                let newBalance = min(max(Double((targetLeft - trackInset) / usableRange), 0), 1)
+                                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) {
+                                    balance = newBalance
+                                }
+                                dragStartBalance = newBalance
+                                return
                             }
                             dragStartBalance = balance
                         }
