@@ -36,7 +36,9 @@ struct ContentView: View {
                 AirportCarouselView(
                     airports: airports,
                     currentIndex: $audio.currentAirportIndex,
-                    dragY: $textDragY
+                    dragY: $textDragY,
+                    showTrackPicker: showTrackPicker,
+                    onOpen: { showTrackPicker = true }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
@@ -49,7 +51,6 @@ struct ContentView: View {
                     selectedTrackIndex: $audio.selectedTrackIndex,
                     showTrackPicker: $showTrackPicker
                 )
-                .offset(y: textDragY)
                 .onChange(of: audio.selectedTrackIndex) { audio.reloadLofi() }
             }
 
@@ -92,6 +93,30 @@ struct ContentView: View {
             }
         }
 
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 12)
+                .onEnded { value in
+                    let dy = value.translation.height
+                    let predicted = value.predictedEndTranslation.height
+                    if showTrackPicker, dy > 60 {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                            showTrackPicker = false
+                        }
+                    } else if !showTrackPicker, dy < -40 || predicted < -80 {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                            showTrackPicker = true
+                            textDragY = -50
+                        }
+                    }
+                }
+        )
+        .onChange(of: showTrackPicker) { _, open in
+            if !open {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                    textDragY = 0
+                }
+            }
+        }
         .onAppear { hasCompletedOnboarding = true }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showUpgrade)
@@ -305,12 +330,13 @@ private struct AirportCarouselView: View {
     let airports: [Airport]
     @Binding var currentIndex: Int
     @Binding var dragY: CGFloat
-    @State private var isVerticalDragging = false
+    let showTrackPicker: Bool
+    let onOpen: () -> Void
 
     var body: some View {
         TabView(selection: $currentIndex) {
             ForEach(airports.indices, id: \.self) { index in
-                AirportPageView(airport: airports[index], dragY: dragY)
+                AirportPageView(airport: airports[index], dragY: showTrackPicker ? -50 : dragY)
                     .tag(index)
             }
         }
@@ -319,18 +345,26 @@ private struct AirportCarouselView: View {
         .simultaneousGesture(
             DragGesture(minimumDistance: 8)
                 .onChanged { value in
-                    let vertical = abs(value.translation.height) > 4
-                    let isVertical = vertical && abs(value.translation.height) > abs(value.translation.width)
-                    if isVertical || isVerticalDragging {
-                        isVerticalDragging = true
-                        dragY = min(max(value.translation.height, -30), 30)
-                    }
+                    guard !showTrackPicker else { return }
+                    let dy = value.translation.height
+                    let isVertical = abs(dy) > abs(value.translation.width)
+                    guard isVertical, dy < 0 else { return }
+                    dragY = max(dy, -80)
                 }
-                .onEnded { _ in
-                    withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
-                        dragY = 0
+                .onEnded { value in
+                    guard !showTrackPicker else { return }
+                    let dy = value.translation.height
+                    let predicted = value.predictedEndTranslation.height
+                    if dy < -40 || predicted < -80 {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                            dragY = -50
+                        }
+                        onOpen()
+                    } else {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            dragY = 0
+                        }
                     }
-                    isVerticalDragging = false
                 }
         )
     }
@@ -358,7 +392,7 @@ private struct AirportPageView: View {
             let baseScaleY = referenceCapHeight > 0
                 ? (geo.size.height / referenceCapHeight) * defaultHeightFraction
                 : 1
-            let clampedDragY = min(max(dragY, -30), 30)
+            let clampedDragY = min(max(dragY, -50), 0)
             let stretchDelta = naturalTextHeight > 0 ? clampedDragY / naturalTextHeight : 0
             let finalScaleY = max(baseScaleY * 0.85, baseScaleY + stretchDelta)
             // posY derived from finalScaleY so top edge stays pinned even at the cap.
@@ -398,11 +432,15 @@ private struct BottomControlsView: View {
     @Environment(ThemeManager.self) private var themeManager
     var body: some View {
         VStack(spacing: 0) {
-            MixerSliderView(balance: $balance)
-                .padding(.horizontal, 20)
+            VStack(spacing: 0) {
+                MixerSliderView(balance: $balance)
+                    .padding(.horizontal, 20)
 
-            PlayPauseButton(isPlaying: $isPlaying)
-                .padding(.top, 16)
+                PlayPauseButton(isPlaying: $isPlaying)
+                    .padding(.top, 16)
+            }
+            .offset(y: showTrackPicker ? -50 : 0)
+            .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showTrackPicker)
 
             // Picker and title share a fixed-height ZStack so no layout animation
             // competes with drag tracking. Visual transforms only.
