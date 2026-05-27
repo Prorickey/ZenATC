@@ -17,12 +17,15 @@ struct ContentView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
     @State private var textDragY: CGFloat = 0
     @State private var isSliderActive = false
+    @State private var volumeMonitor = VolumeMonitor()
+    @State private var volumeOverlaySnoozed = false
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
 
     var body: some View {
         @Bindable var audio = audio
+        let showVolumeOverlay = volumeMonitor.volume <= 0 && !volumeOverlaySnoozed
 
         ZStack(alignment: .top) {
             themeManager.theme.background.ignoresSafeArea()
@@ -95,13 +98,23 @@ struct ContentView: View {
                     .transition(.opacity)
                     .zIndex(10)
             }
+
+            if showVolumeOverlay {
+                VolumeTooLowView(onContinue: {
+                    volumeOverlaySnoozed = true
+                })
+                .transition(.opacity)
+                .zIndex(20)
+            }
         }
 
         .simultaneousGesture(
             DragGesture(minimumDistance: 12)
                 .onEnded { value in
                     guard !isSliderActive else { return }
+                    let dx = value.translation.width
                     let dy = value.translation.height
+                    guard abs(dy) > abs(dx) else { return }
                     let predicted = value.predictedEndTranslation.height
                     if showTrackPicker, dy > 60 {
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
@@ -122,6 +135,12 @@ struct ContentView: View {
                 }
             }
         }
+        .onChange(of: volumeMonitor.volume) { _, newVolume in
+            if newVolume > 0 {
+                volumeOverlaySnoozed = false
+            }
+        }
+        .animation(.easeInOut(duration: 0.6), value: showVolumeOverlay)
         .onAppear { hasCompletedOnboarding = true }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showUpgrade)
@@ -350,7 +369,9 @@ private struct AirportCarouselView: View {
             DragGesture(minimumDistance: 8)
                 .onEnded { value in
                     guard !showTrackPicker else { return }
+                    let dx = value.translation.width
                     let dy = value.translation.height
+                    guard abs(dy) > abs(dx) else { return }
                     let predicted = value.predictedEndTranslation.height
                     if dy < -40 || predicted < -80 {
                         withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
@@ -500,7 +521,7 @@ private struct InlineTrackPicker: View {
 
     var body: some View {
         let totalHeight = itemHeight * CGFloat(visibleCount)
-        let baseOffset = totalHeight / 2 - itemHeight / 2 - CGFloat(selectedIndex) * itemHeight
+        let baseOffset = -CGFloat(selectedIndex) * itemHeight
         let rawCenter = Double(selectedIndex) - Double(dragOffset) / Double(itemHeight)
 
         GeometryReader { geo in
