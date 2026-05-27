@@ -14,7 +14,7 @@ An iOS app that blends live ATC radio with lofi beats. Swipe through airports, m
 │  Lofi track picker ──► AVPlayer (HLS stream)         │
 │  Mixer slider ──────► volume on both players         │
 └──────────────────────┬───────────────────────────────┘
-                       │ GET /stream-url → signed CDN URL
+                       │ App Attest → signed CDN URL
                        ▼
 ┌──────────────────────────────────────────────────────┐
 │         Cloudflare Worker (zenatc.bedson.tech)       │
@@ -27,7 +27,6 @@ An iOS app that blends live ATC radio with lofi beats. Swipe through airports, m
 ┌──────────────────────────────────────────────────────┐
 │           Go / Gin Backend (:8080 → 3303)            │
 │                                                      │
-│  /stream-url       — issues signed CDN URLs          │
 │  /attestation-challenge — JWT challenge for Attest   │
 │  /attest-key       — registers App Attest public key │
 │  /assert-and-stream — assertion-gated signed URL     │
@@ -40,16 +39,14 @@ An iOS app that blends live ATC radio with lofi beats. Swipe through airports, m
 
 ---
 
-## ⚠️ TODO: Re-enable App Attest
+## Security: App Attest
 
-The current streaming flow uses `/stream-url` — an unauthenticated endpoint that issues signed CDN URLs to any caller. This was necessary because **App Attest requires a paid Apple Developer account** and is not available on free personal teams.
+Audio streaming is gated by [Apple App Attest](https://developer.apple.com/documentation/devicecheck/establishing-your-app-s-integrity). The flow:
 
-Once the account is upgraded to a paid Apple Developer Program membership:
+1. **First launch**: iOS generates an attestation key, sends it to `/attest-key` with a signed JWT challenge — the backend verifies the CBOR attestation against Apple's root CA and stores the public key.
+2. **Every track load**: iOS calls `generateAssertion` (no Apple server contact) and sends it to `/assert-and-stream` — the backend verifies the ECDSA signature against the stored key and returns a short-lived signed CDN URL.
 
-1. **Enable App Attest** in Xcode → Target → Signing & Capabilities → Add Capability → **App Attest** (set to `production` for App Store builds)
-2. **Restore `AttestationManager`** in `AudioManager.swift` — replace `resolveLofiURL` with `attestationManager.requestStreamURL(for:)`
-3. **Remove `/stream-url`** from `backend/verification.go` and `backend/main.go`
-4. The App Attest infrastructure (`/attestation-challenge`, `/attest-key`, `/assert-and-stream`) is already fully implemented and ready
+The entitlements file (`ZenATC.entitlements`) is set to `development`. Change to `production` before App Store submission.
 
 ---
 
@@ -160,7 +157,6 @@ The app points to `https://zenatc.bedson.tech` by default (`backendBaseURL` in `
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
-| `GET` | `/stream-url?stream_id=<id>` | Returns signed CDN URL (no auth — temporary) |
 | `GET` | `/attestation-challenge` | Issues JWT challenge for App Attest |
 | `POST` | `/attest-key` | Registers App Attest public key |
 | `POST` | `/assert-and-stream` | Assertion-gated signed CDN URL |

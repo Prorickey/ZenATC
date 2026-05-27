@@ -23,6 +23,12 @@ export default {
       return fetch(request);
     }
 
+    // .ts segments are immutable and publicly cacheable — no signature needed.
+    // Only playlists (.m3u8) require a valid signed URL.
+    if (url.pathname.endsWith(".ts")) {
+      return fetch(request, { cf: { cacheEverything: true } });
+    }
+
     // ── Validate query params ─────────────────────────────────────────────────
 
     const expiresStr = url.searchParams.get("expires");

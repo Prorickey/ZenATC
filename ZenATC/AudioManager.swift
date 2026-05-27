@@ -31,6 +31,7 @@ final class AudioManager {
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
+    private let attestationManager = AttestationManager(backendBaseURL: backendBaseURL)
 
     init() {
         configureSession()
@@ -84,14 +85,11 @@ final class AudioManager {
         atcPlayer?.prepareToPlay()
     }
 
-    // Fetches a signed CDN URL from the backend, then starts playback.
+    // Fetches a signed CDN URL via App Attest, then starts playback.
     //
     // Play-through behaviour:
     //   Pass 1 — AVPlayer streams each 4-second segment from Cloudflare, buffering ahead.
     //   Pass 2+ — segments are in the local URL cache; playback is fully offline.
-    //
-    // TODO: Replace /stream-url with App Attest-gated /assert-and-stream once
-    //       the Apple Developer account is upgraded to a paid membership.
     @MainActor
     private func loadAndPlayLofi() async {
         let filename = tracks[selectedTrackIndex].filename
@@ -130,26 +128,12 @@ final class AudioManager {
     }
 
     private func resolveLofiURL(filename: String) async -> URL {
-        let endpoint = backendBaseURL
-            .appendingPathComponent("stream-url")
-            .appending(queryItems: [URLQueryItem(name: "stream_id", value: filename)])
         do {
-            let (data, _) = try await URLSession.shared.data(from: endpoint)
-            if let json = try? JSONDecoder().decode(StreamURLResponse.self, from: data),
-               let url = URL(string: json.streamURL) {
-                return url
-            }
+            return try await attestationManager.requestStreamURL(for: filename)
         } catch {
-            print("[AudioManager] stream-url fetch failed: \(error)")
+            print("[AudioManager] attestation failed, using direct URL: \(error)")
+            return backendBaseURL.appendingPathComponent("hls/\(filename)/index.m3u8")
         }
-        // Fallback: direct HLS URL (no signature — will be blocked by Cloudflare Worker
-        // in production, but useful locally with docker.sh run).
-        return backendBaseURL.appendingPathComponent("hls/\(filename)/index.m3u8")
-    }
-
-    private struct StreamURLResponse: Decodable {
-        let streamURL: String
-        enum CodingKeys: String, CodingKey { case streamURL = "stream_url" }
     }
 
     private func updateVolumes() {

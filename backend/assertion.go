@@ -3,12 +3,14 @@ package main
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"log"
+	"math/big"
 	"net/http"
 	"sync"
 
@@ -29,18 +31,71 @@ var (
 	keyStoreMu sync.Mutex
 )
 
-// storeKey saves a verified public key so future assertions can be verified without
-// contacting Apple's servers. initialAuthData is the authenticatorData from the
-// attestation CBOR; bytes 33–36 carry the initial counter (0 for a fresh key).
-func storeKey(keyID string, pub *ecdsa.PublicKey, initialAuthData []byte) {
+// storeKey extracts the COSE public key from the attestation authData and stores it.
+// The COSE key (not the credential certificate's key) is what Apple uses for assertion signing.
+func storeKey(keyID string, certPub *ecdsa.PublicKey, initialAuthData []byte) {
 	var initialCounter uint32
 	if len(initialAuthData) >= 37 {
 		initialCounter = binary.BigEndian.Uint32(initialAuthData[33:37])
 	}
+
+	// Extract the COSE public key from authData.
+	// Layout: rpIdHash(32) | flags(1) | counter(4) | AAGUID(16) | credIdLen(2) | credId(N) | COSEKey(...)
+	pub := certPub
+	if len(initialAuthData) >= 55 {
+		credIDLen := int(initialAuthData[53])<<8 | int(initialAuthData[54])
+		coseOffset := 55 + credIDLen
+		if coseOffset < len(initialAuthData) {
+			if cosePub, err := parseCOSEKey(initialAuthData[coseOffset:]); err == nil {
+				pub = cosePub
+				log.Printf("[attest] using COSE public key from authData")
+			} else {
+				log.Printf("[attest] COSE key parse failed, using cert key: %v", err)
+			}
+		}
+	}
+
 	keyStoreMu.Lock()
 	defer keyStoreMu.Unlock()
 	keyStore[keyID] = &attestedKey{publicKey: pub, counter: initialCounter}
 	log.Printf("[attest] registered key %q (counter=%d)", keyID, initialCounter)
+}
+
+func parseCOSEKey(data []byte) (*ecdsa.PublicKey, error) {
+	var rawMap map[int]interface{}
+	if err := cbor.Unmarshal(data, &rawMap); err != nil {
+		return nil, fmt.Errorf("CBOR unmarshal: %w", err)
+	}
+
+	log.Printf("[attest] COSE key map keys: %v", rawMap)
+
+	xRaw, ok := rawMap[-2]
+	if !ok {
+		return nil, fmt.Errorf("COSE key missing x (-2)")
+	}
+	yRaw, ok := rawMap[-3]
+	if !ok {
+		return nil, fmt.Errorf("COSE key missing y (-3)")
+	}
+
+	xBytes, ok := xRaw.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("COSE key x is not []byte: %T", xRaw)
+	}
+	yBytes, ok := yRaw.([]byte)
+	if !ok {
+		return nil, fmt.Errorf("COSE key y is not []byte: %T", yRaw)
+	}
+
+	log.Printf("[attest] COSE X(%d)=%x Y(%d)=%x", len(xBytes), xBytes, len(yBytes), yBytes)
+
+	x := new(big.Int).SetBytes(xBytes)
+	y := new(big.Int).SetBytes(yBytes)
+	return &ecdsa.PublicKey{
+		Curve: elliptic.P256(),
+		X:     x,
+		Y:     y,
+	}, nil
 }
 
 // ── /attest-key ──────────────────────────────────────────────────────────────
@@ -182,12 +237,15 @@ func verifyAssertion(challengeToken, keyID string, assertionBytes []byte) error 
 	}
 
 	// Verify ECDSA signature.
-	// nonce = SHA256(authenticatorData || SHA256(challenge))
+	// nonce = SHA256(authenticatorData || clientDataHash)
+	// where clientDataHash is what the iOS client passed to generateAssertion.
+	// The iOS client passes SHA256(challenge) as clientDataHash.
 	clientDataHash := sha256.Sum256([]byte(challenge))
 	composite := make([]byte, 0, len(assertion.AuthenticatorData)+sha256.Size)
 	composite = append(composite, assertion.AuthenticatorData...)
 	composite = append(composite, clientDataHash[:]...)
-	nonce := sha256.Sum256(composite)
+	inner := sha256.Sum256(composite)
+	nonce := sha256.Sum256(inner[:])
 
 	if !ecdsa.VerifyASN1(stored.publicKey, nonce[:], assertion.Signature) {
 		return errors.New("assertion signature invalid")

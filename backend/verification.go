@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/sha256"
 	"crypto/x509"
 	_ "embed"
@@ -55,7 +56,7 @@ func initVerification() {
 	// Allow override for multi-tenant or staging builds; default to this app.
 	appID := os.Getenv("APPLE_APP_ID")
 	if appID == "" {
-		appID = "LXTD6ZNS5L.tech.bedson.ZenATC"
+		appID = "PS96HNX5KD.tech.bedson.lofiatc"
 	}
 	appleAppID = appID
 	log.Printf("[attest] App ID: %s", appleAppID)
@@ -111,30 +112,6 @@ func verifyAndStreamHandler(c *gin.Context) {
 	streamURL, err := signedStreamURL(req.StreamID, streamURLTTL)
 	if err != nil {
 		log.Printf("[cdn] failed to sign URL for %q: %v", req.StreamID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate stream URL"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"stream_url": streamURL})
-}
-
-// streamURLHandler issues a signed CDN URL without any device attestation.
-// Used on free Apple Developer accounts that don't support App Attest.
-// TODO: Remove this endpoint and use /assert-and-stream exclusively once
-//       the Apple Developer account is upgraded to a paid membership.
-//
-// GET /stream-url?stream_id=lofi_late_night
-// Response 200: { "stream_url": "..." }
-func streamURLHandler(c *gin.Context) {
-	streamID := c.Query("stream_id")
-	if !validStreamID.MatchString(streamID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or missing stream_id"})
-		return
-	}
-
-	streamURL, err := signedStreamURL(streamID, streamURLTTL)
-	if err != nil {
-		log.Printf("[cdn] failed to sign URL for %q: %v", streamID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate stream URL"})
 		return
 	}
@@ -262,6 +239,7 @@ func verifyCertChain(credCert, intermediateCert *x509.Certificate) error {
 	_, err := credCert.Verify(x509.VerifyOptions{
 		Roots:         appleRootCAPool,
 		Intermediates: intermediates,
+		KeyUsages:     []x509.ExtKeyUsage{x509.ExtKeyUsageAny},
 	})
 	return err
 }
@@ -269,20 +247,37 @@ func verifyCertChain(credCert, intermediateCert *x509.Certificate) error {
 // MARK: - Step 5: Nonce / challenge integrity
 
 // The credential certificate carries the expected nonce in a proprietary Apple
-// extension (OID 1.2.840.113635.100.8.2). Its value is a DER SEQUENCE
-// containing a single OCTET STRING with the 32-byte SHA-256 nonce.
+// extension (OID 1.2.840.113635.100.8.2). The DER structure is:
+//
+//	SEQUENCE {
+//	  [1] EXPLICIT {
+//	    OCTET STRING <32-byte SHA-256 nonce>
+//	  }
+//	}
 func verifyCertNonce(cert *x509.Certificate, expectedNonce []byte) error {
 	for _, ext := range cert.Extensions {
 		if !ext.Id.Equal(oidAppleAttestation) {
 			continue
 		}
-		var wrapper struct {
-			Nonce []byte // decoded from DER OCTET STRING inside the SEQUENCE
+		// Outer SEQUENCE containing one context-specific tagged element.
+		var outer []asn1.RawValue
+		if _, err := asn1.Unmarshal(ext.Value, &outer); err != nil {
+			return fmt.Errorf("failed to parse nonce extension outer sequence: %w", err)
 		}
-		if _, err := asn1.Unmarshal(ext.Value, &wrapper); err != nil {
-			return fmt.Errorf("failed to parse nonce extension: %w", err)
+		if len(outer) == 0 {
+			return errors.New("nonce extension sequence is empty")
 		}
-		if !bytes.Equal(wrapper.Nonce, expectedNonce) {
+		// The first (and only) element is [1] EXPLICIT wrapping an OCTET STRING.
+		var octetString asn1.RawValue
+		if _, err := asn1.Unmarshal(outer[0].FullBytes, &octetString); err != nil {
+			return fmt.Errorf("failed to parse nonce extension tagged element: %w", err)
+		}
+		// Extract the inner OCTET STRING from the context-specific wrapper.
+		var nonce []byte
+		if _, err := asn1.Unmarshal(octetString.Bytes, &nonce); err != nil {
+			return fmt.Errorf("failed to parse nonce octet string: %w", err)
+		}
+		if !bytes.Equal(nonce, expectedNonce) {
 			return errors.New("certificate nonce does not match computed value")
 		}
 		return nil
@@ -299,6 +294,7 @@ func verifyRPIDHash(authData []byte) error {
 	}
 	expected := sha256.Sum256([]byte(appleAppID))
 	if !bytes.Equal(authData[:32], expected[:]) {
+		log.Printf("[attest] rpIdHash mismatch: expected SHA256(%q) = %x, got %x", appleAppID, expected[:], authData[:32])
 		return errors.New("rpIdHash does not match App ID")
 	}
 	return nil
@@ -334,7 +330,12 @@ func verifyCredentialID(credCert *x509.Certificate, authData []byte) error {
 	}
 	credID := authData[55 : 55+credIDLen]
 
-	pubKeyHash := sha256.Sum256(credCert.RawSubjectPublicKeyInfo)
+	ecPub, ok := credCert.PublicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return errors.New("credential certificate does not contain an EC public key")
+	}
+	rawKey := elliptic.Marshal(ecPub.Curve, ecPub.X, ecPub.Y)
+	pubKeyHash := sha256.Sum256(rawKey)
 	if !bytes.Equal(credID, pubKeyHash[:]) {
 		return errors.New("credential ID does not match public key hash")
 	}
