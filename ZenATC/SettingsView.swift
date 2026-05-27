@@ -4,6 +4,7 @@
 //
 
 import SwiftUI
+import StoreKit
 
 struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
@@ -60,11 +61,12 @@ struct SettingsView: View {
             }
         }
         .sheet(isPresented: $showAuthSheet) {
-            AccountSheet()
+            UpgradeFlowSheet(authManager: authManager, purchaseManager: purchaseManager)
         }
     }
 
     private func handleUpgradeTap() {
+        guard !purchaseManager.isPro else { return }
         showAuthSheet = true
     }
 
@@ -683,6 +685,161 @@ private struct MiniAppScreen: View {
             }
         }
         .frame(width: 208.82, height: 454)
+    }
+}
+
+// MARK: - Upgrade Flow Sheet
+
+private struct UpgradeFlowSheet: View {
+    let authManager: AuthManager
+    let purchaseManager: PurchaseManager
+
+    @State private var email = ""
+    @State private var password = ""
+    @State private var errorMessage: String?
+    @State private var isLoading = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                if !authManager.isSignedIn {
+                    signInSection
+                } else if !purchaseManager.isPro {
+                    accountSection
+                    plansSection
+                } else {
+                    proSection
+                }
+            }
+            .navigationTitle("ZenATC Pro")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium])
+    }
+
+    private var signInSection: some View {
+        Section {
+            TextField("Email", text: $email)
+                .textContentType(.emailAddress)
+                .keyboardType(.emailAddress)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+
+            SecureField("Password", text: $password)
+                .textContentType(.password)
+
+            if let error = errorMessage {
+                Text(error).foregroundStyle(.red).font(.caption)
+            }
+
+            Button {
+                Task { await signIn() }
+            } label: {
+                label("Sign In")
+            }
+            .disabled(isLoading || email.isEmpty || password.isEmpty)
+
+            Button {
+                Task { await createAccount() }
+            } label: {
+                label("Create Account")
+            }
+            .disabled(isLoading || email.isEmpty || password.isEmpty)
+        } header: {
+            Text("Sign in to upgrade")
+        }
+    }
+
+    private var accountSection: some View {
+        Section {
+            Text(authManager.userEmail ?? "").foregroundStyle(.secondary)
+        } header: {
+            Text("Signed in as")
+        }
+    }
+
+    private var plansSection: some View {
+        Section {
+            ForEach(purchaseManager.products) { product in
+                Button {
+                    Task { await purchase(product) }
+                } label: {
+                    HStack {
+                        Text(product.displayName)
+                        Spacer()
+                        Text(product.displayPrice).foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(isLoading)
+            }
+
+            if let error = errorMessage {
+                Text(error).foregroundStyle(.red).font(.caption)
+            }
+        } header: {
+            Text("Choose a plan")
+        }
+    }
+
+    private var proSection: some View {
+        Section {
+            HStack {
+                Text("Status")
+                Spacer()
+                Text("Pro ✓").foregroundStyle(.secondary)
+            }
+            Text(authManager.userEmail ?? "").foregroundStyle(.secondary)
+            Button(role: .destructive) {
+                try? authManager.signOut()
+            } label: {
+                Text("Sign Out")
+            }
+        } header: {
+            Text("Account")
+        }
+    }
+
+    private func label(_ title: String) -> some View {
+        Group {
+            if isLoading {
+                ProgressView().frame(maxWidth: .infinity)
+            } else {
+                Text(title).frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private func signIn() async {
+        errorMessage = nil
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await authManager.signIn(email: email, password: password)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func createAccount() async {
+        errorMessage = nil
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await authManager.createAccount(email: email, password: password)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func purchase(_ product: Product) async {
+        errorMessage = nil
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            try await purchaseManager.purchase(product)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 
