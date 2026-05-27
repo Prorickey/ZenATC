@@ -13,6 +13,7 @@ struct ContentView: View {
     @State private var showTrackPicker = false
     @State private var showSettings = false
     @State private var showAirports = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
@@ -59,9 +60,16 @@ struct ContentView: View {
                     .transition(.move(edge: .top))
                     .zIndex(2)
             }
+
+            if !hasCompletedOnboarding {
+                OnboardingView(isCompleted: $hasCompletedOnboarding, audio: audio)
+                    .transition(.opacity)
+                    .zIndex(10)
+            }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirports)
+        .animation(.easeInOut(duration: 0.6), value: hasCompletedOnboarding)
         .environment(themeManager)
     }
 }
