@@ -4,6 +4,7 @@
 //
 
 import AVFoundation
+import MediaPlayer
 import Observation
 
 let backendBaseURL = URL(string: "https://zenatc.bedson.tech")!
@@ -44,6 +45,7 @@ final class AudioManager {
 
     init() {
         configureSession()
+        configureRemoteCommands()
     }
 
     @MainActor
@@ -87,11 +89,13 @@ final class AudioManager {
         } else {
             lofiPlayer?.play()
         }
+        updateNowPlaying()
     }
 
     private func pausePlayback() {
         atcPlayer?.pause()
         lofiPlayer?.pause()
+        updateNowPlaying()
     }
 
     func reloadATC() {
@@ -102,11 +106,13 @@ final class AudioManager {
             updateVolumes()
             atcPlayer?.play()
         }
+        updateNowPlaying()
     }
 
     func reloadLofi() {
         tearDownLofi()
         Task { await loadAndPlayLofi() }
+        updateNowPlaying()
     }
 
     private func loadATC() {
@@ -199,6 +205,7 @@ final class AudioManager {
 
         atcPlayer?.setVolume(atcTarget, fadeDuration: Self.fadeDuration)
         fadeLofiVolume(to: lofiTarget)
+        updateNowPlaying()
     }
 
     func fadeToBalance(_ newBalance: Double) {
@@ -212,6 +219,69 @@ final class AudioManager {
         atcPlayer?.setVolume(atcTarget, fadeDuration: Self.fadeDuration)
         fadeLofiVolume(to: lofiTarget)
     }
+
+    // MARK: - Now Playing
+
+    private func configureRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+
+        center.playCommand.addTarget { [weak self] _ in
+            self?.isPlaying = true
+            return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            self?.isPlaying = false
+            return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.isPlaying.toggle()
+            return .success
+        }
+
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            let next = (self.selectedTrackIndex + 1) % self.tracks.count
+            self.selectedTrackIndex = next
+            self.reloadLofi()
+            return .success
+        }
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            let prev = (self.selectedTrackIndex - 1 + self.tracks.count) % self.tracks.count
+            self.selectedTrackIndex = prev
+            self.reloadLofi()
+            return .success
+        }
+    }
+
+    private func updateNowPlaying() {
+        let track = tracks[selectedTrackIndex]
+        let airport = airports[currentAirportIndex]
+
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: track.name,
+            MPMediaItemPropertyArtist: "lofi atc — \(airport.code)",
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+        ]
+
+        if let icon = loadAppIcon() {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: icon.size) { _ in icon }
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func loadAppIcon() -> UIImage? {
+        guard let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+              let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+              let files = primary["CFBundleIconFiles"] as? [String],
+              let name = files.last
+        else { return nil }
+        return UIImage(named: name)
+    }
+
+    // MARK: - Fade
 
     private func fadeLofiVolume(to target: Float) {
         lofiFadeTimer?.invalidate()
