@@ -260,7 +260,7 @@ struct SettingsView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text("Join")
-                        .font(.system(size: 15, weight: .semibold))
+                        .font(.system(size: 30, weight: .semibold))
                         .foregroundStyle(themeManager.theme.background)
                     ProBadge(inverted: true)
                 }
@@ -276,38 +276,40 @@ struct SettingsView: View {
     }
 
     private var makeItYours: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("Make it your own")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(themeManager.theme.foreground.opacity(0.6))
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    AirportCard(code: "JFK", style: .green)
-                    AirportCard(code: "SFO", style: .orange)
-                    AirportCard(code: "LAX", style: .blue)
-                }
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(settingsAccent)
                 .padding(.horizontal, 20)
-            }
+
+            ThemeCarousel(accent: settingsAccent, interval: 3.0)
         }
     }
 
     private var boringStuff: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Boring stuff")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(themeManager.theme.foreground.opacity(0.6))
+                .font(.system(size: 29.56, weight: .bold))
+                .foregroundStyle(settingsAccent)
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Restore")
-                Text("Terms of Service")
-                Text("Support")
-                Text("Privacy Policy")
-                Text("Cancel")
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Switch billing cycle")
+                    Text("Restore")
+                    Text("Cancel")
+                }
+                Spacer()
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Terms of Service")
+                    Text("Support")
+                    Text("Privacy Policy")
+                }
             }
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(themeManager.theme.foreground.opacity(0.7))
+            .font(.system(size: 14, weight: .medium))
+            .foregroundStyle(settingsAccent)
         }
+        .padding(12)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
         .padding(.horizontal, 20)
     }
 
@@ -324,9 +326,9 @@ private struct ProBadge: View {
 
     var body: some View {
         Text("PRO")
-            .font(.system(size: 10, weight: .bold))
+            .font(.system(size: 14, weight: .bold))
             .foregroundStyle(inverted ? themeManager.theme.foreground : themeManager.theme.background)
-            .padding(.horizontal, 6)
+            .padding(.horizontal, 10)
             .padding(.vertical, 2)
             .background(inverted ? themeManager.theme.background : themeManager.theme.foreground)
             .clipShape(Capsule())
@@ -522,7 +524,7 @@ private struct PremiumAudioCard: View {
                 // Image area
                 ZStack {
                     // Spirals use multiply blend to knock out white on card bg
-                    VStack(spacing: 0) {
+                    VStack(spacing: 120) {
                         Image("spiral_top")
                             .resizable()
                             .aspectRatio(contentMode: .fit)
@@ -545,6 +547,130 @@ private struct PremiumAudioCard: View {
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 20))
+    }
+}
+
+// MARK: - Theme Carousel
+
+private struct ThemeCarousel: View {
+    let accent: Color
+    let interval: Double
+
+    @State private var currentIndex = 0
+    @State private var autoTimer: Timer?
+
+    private let airports = ["LAX", "JFK", "SFO", "ORD", "LHR", "LGA"]
+
+    var body: some View {
+        VStack(spacing: 14) {
+            TabView(selection: $currentIndex) {
+                ForEach(AppTheme.all.indices, id: \.self) { index in
+                    MiniAppScreen(
+                        theme: AppTheme.all[index],
+                        airportCode: airports[index % airports.count]
+                    )
+                    .tag(index)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 454)
+
+            HStack(spacing: 6) {
+                ForEach(AppTheme.all.indices, id: \.self) { index in
+                    Capsule()
+                        .fill(accent.opacity(index == currentIndex ? 1 : 0.3))
+                        .frame(width: index == currentIndex ? 18 : 6, height: 6)
+                        .animation(.easeInOut(duration: 0.25), value: currentIndex)
+                }
+            }
+        }
+        .onAppear {
+            autoTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
+                withAnimation(.easeInOut(duration: 0.4)) {
+                    currentIndex = (currentIndex + 1) % AppTheme.all.count
+                }
+            }
+        }
+        .onDisappear { autoTimer?.invalidate() }
+    }
+}
+
+// MARK: - Mini App Screen
+
+private struct MiniAppScreen: View {
+    let theme: AppTheme
+    let airportCode: String
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 31.69)
+                .fill(theme.background)
+
+            VStack(spacing: 0) {
+                // Top bar
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(theme.foreground)
+                        .frame(width: 7, height: 7)
+                    Text("LIVE")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundStyle(theme.foreground)
+                    Spacer()
+                    HStack(spacing: 7) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            Circle()
+                                .fill(theme.foreground)
+                                .frame(width: 9, height: 9)
+                        }
+                    }
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 22)
+
+                // Airport code
+                Spacer()
+                Text(airportCode)
+                    .font(.gtStandardAirport(size: 90))
+                    .foregroundStyle(theme.foreground)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+                    .padding(.horizontal, 8)
+                Spacer()
+
+                // Bottom controls
+                VStack(spacing: 10) {
+                    // Mixer slider
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(theme.foreground.opacity(0.2))
+                            .frame(height: 7)
+                        Capsule()
+                            .fill(theme.foreground)
+                            .frame(width: 28, height: 5)
+                            .padding(.leading, 2)
+                    }
+                    .padding(.horizontal, 18)
+
+                    // Play button
+                    Circle()
+                        .fill(theme.foreground.opacity(0.15))
+                        .frame(width: 38, height: 38)
+                        .overlay(
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(theme.foreground)
+                                .offset(x: 1)
+                        )
+
+                    // Track name
+                    Capsule()
+                        .fill(theme.foreground.opacity(0.25))
+                        .frame(width: 72, height: 5)
+                }
+                .padding(.bottom, 28)
+            }
+        }
+        .frame(width: 208.82, height: 454)
     }
 }
 
