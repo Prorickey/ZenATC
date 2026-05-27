@@ -7,7 +7,10 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
+    @Environment(AuthManager.self) private var authManager
+    @Environment(PurchaseManager.self) private var purchaseManager
     @Binding var showSettings: Bool
+    @State private var showAuthSheet = false
 
     private let settingsAccent = Color(red: 0.878, green: 0.298, blue: 0.149)
 
@@ -56,6 +59,13 @@ struct SettingsView: View {
                 .padding(.bottom, 30)
             }
         }
+        .sheet(isPresented: $showAuthSheet) {
+            AccountSheet()
+        }
+    }
+
+    private func handleUpgradeTap() {
+        showAuthSheet = true
     }
 
     private var header: some View {
@@ -138,6 +148,7 @@ struct SettingsView: View {
                 .frame(width: 330)
 
             Button {
+                handleUpgradeTap()
             } label: {
                 Text("Upgrade now")
                     .font(.system(size: 20, weight: .bold))
@@ -257,6 +268,7 @@ struct SettingsView: View {
         HStack {
             Spacer()
             Button {
+                handleUpgradeTap()
             } label: {
                 HStack(spacing: 6) {
                     Text("Join")

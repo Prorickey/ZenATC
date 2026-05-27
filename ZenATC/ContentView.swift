@@ -9,7 +9,6 @@ struct ContentView: View {
     @State private var audio = AudioManager()
     @State private var themeManager = ThemeManager()
     @State private var showTrackPicker = false
-    @State private var showAccountSheet = false
     @State private var showSettings = false
 
     private let airports = Airport.all
@@ -22,7 +21,7 @@ struct ContentView: View {
             themeManager.theme.background.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                TopBarView(showAccountSheet: $showAccountSheet, showSettings: $showSettings)
+                TopBarView(showSettings: $showSettings)
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -54,18 +53,14 @@ struct ContentView: View {
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
         .environment(themeManager)
-        .sheet(isPresented: $showAccountSheet) {
-            AccountSheet()
-        }
     }
 }
 
 // MARK: - Top Bar
 
 private struct TopBarView: View {
-    @Binding var showAccountSheet: Bool
-    @Environment(ThemeManager.self) private var themeManager
     @Binding var showSettings: Bool
+    @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
         HStack(spacing: 10) {
@@ -78,7 +73,7 @@ private struct TopBarView: View {
 
             Spacer()
 
-            RightIconsView(showAccountSheet: $showAccountSheet, showSettings: $showSettings)
+            RightIconsView(showSettings: $showSettings)
         }
     }
 }
@@ -112,19 +107,12 @@ private struct LiveIndicatorView: View {
 // MARK: - Right Icons
 
 private struct RightIconsView: View {
-    @Binding var showAccountSheet: Bool
     @Binding var showSettings: Bool
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
         HStack(spacing: 24) {
             Image(systemName: "bell.fill")
-
-            Button {
-                showAccountSheet = true
-            } label: {
-                Image(systemName: "person.crop.circle.fill")
-            }
 
             Button {
                 withAnimation(.easeInOut(duration: 0.3)) {
