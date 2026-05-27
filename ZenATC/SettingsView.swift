@@ -12,6 +12,9 @@ struct SettingsView: View {
     let purchaseManager: PurchaseManager
     @Binding var showSettings: Bool
     @Binding var showUpgrade: Bool
+    @Binding var currentAirportIndex: Int
+
+    @State private var showAirportsList = false
 
     private let appearanceColors: [Color] = [
         Color(red: 0.91, green: 0.28, blue: 0.16),
@@ -57,7 +60,14 @@ struct SettingsView: View {
                 }
                 .padding(.bottom, 30)
             }
+
+            if showAirportsList {
+                AirportsListView(showAirports: $showAirportsList, currentAirportIndex: $currentAirportIndex)
+                    .transition(.move(edge: .bottom))
+                    .zIndex(1)
+            }
         }
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirportsList)
     }
 
     private func handleUpgradeTap() {
@@ -222,6 +232,7 @@ struct SettingsView: View {
             }
 
             Button {
+                showAirportsList = true
             } label: {
                 Text("See the list")
                     .font(.system(size: 12, weight: .semibold))
@@ -688,6 +699,7 @@ private struct MiniAppScreen: View {
 #Preview {
     @Previewable @State var show = true
     @Previewable @State var showUpgrade = false
-    SettingsView(authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show, showUpgrade: $showUpgrade)
+    @Previewable @State var airportIndex = 0
+    SettingsView(authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show, showUpgrade: $showUpgrade, currentAirportIndex: $airportIndex)
         .environment(ThemeManager())
 }

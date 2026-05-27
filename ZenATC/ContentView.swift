@@ -55,7 +55,8 @@ struct ContentView: View {
                     authManager: authManager,
                     purchaseManager: purchaseManager,
                     showSettings: $showSettings,
-                    showUpgrade: $showUpgrade
+                    showUpgrade: $showUpgrade,
+                    currentAirportIndex: $audio.currentAirportIndex
                 )
                 .transition(.move(edge: .bottom))
             }
