@@ -90,12 +90,16 @@ ZenATC/
     ├── challenge.go             # Stateless JWT challenge endpoint
     ├── main.go                  # Gin server + HLS file handler
     ├── verification.go          # Apple attestation CBOR verification
+    ├── scripts/
+    │   ├── docker.sh            # Local build/run + registry deploy
+    │   ├── download.sh          # Download lofi MP3 sources
+    │   ├── download_sections.sh # Download ATC audio sections
+    │   ├── generate_hls.sh      # Manual HLS slicing (standalone)
+    │   └── zenatc.conf          # nginx config for zenatc.bedson.tech
     ├── .env.example             # Environment variable template
     ├── docker-compose.yml       # Production deployment
-    ├── docker.sh                # Local build/run + registry deploy
     ├── Dockerfile               # Multi-stage build; generates HLS on first start
-    ├── docker-entrypoint.sh     # Auto-secrets + parallel HLS slicing
-    └── zenatc.conf              # nginx config for zenatc.bedson.tech
+    └── docker-entrypoint.sh     # Auto-secrets + parallel HLS slicing
 ```
 
 ---
@@ -144,7 +148,7 @@ Generate secrets with `openssl rand -base64 32`. The `CLOUDFLARE_URL_SIGNING_SEC
 
 ```bash
 cd backend
-./docker.sh run
+./scripts/docker.sh run
 ```
 
 Builds the image, generates HLS segments in parallel, and starts on port 3303.
@@ -153,7 +157,7 @@ Builds the image, generates HLS segments in parallel, and starts on port 3303.
 
 ```bash
 cd backend
-./docker.sh deploy         # build + push to registry
+./scripts/docker.sh deploy   # build + push to registry
 # on server:
 docker compose up -d
 ```

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+cd "$(dirname "$0")/.."
+
 IMAGE="docker.bedson.tech/tbedson/zenatc-backend"
 
 case "${1:-}" in
