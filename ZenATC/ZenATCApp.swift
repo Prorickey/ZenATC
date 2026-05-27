@@ -6,24 +6,19 @@
 import SwiftUI
 import CoreGraphics
 import CoreText
-import FirebaseCore
 
 @main
 struct ZenATCApp: App {
-    @State private var authManager: AuthManager
-    @State private var purchaseManager: PurchaseManager
+    @State private var purchaseManager = PurchaseManager()
 
     init() {
-        FirebaseApp.configure()
-        _authManager = State(wrappedValue: AuthManager())
-        _purchaseManager = State(wrappedValue: PurchaseManager())
         FontLoader.registerAll()
         UIPickerView.appearance().backgroundColor = .clear
     }
 
     var body: some Scene {
         WindowGroup {
-            ContentView(authManager: authManager, purchaseManager: purchaseManager)
+            ContentView(purchaseManager: purchaseManager)
         }
     }
 }

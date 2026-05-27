@@ -6,10 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		DCFF99A62FC67F88007D5AB1 /* FirebaseAuth in Frameworks */ = {isa = PBXBuildFile; productRef = DCFF99A52FC67F88007D5AB1 /* FirebaseAuth */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXContainerItemProxy section */
 		DC1797522FC6488200F3FCC1 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -56,7 +52,6 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				DCFF99A62FC67F88007D5AB1 /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,7 +120,6 @@
 			);
 			name = ZenATC;
 			packageProductDependencies = (
-				DCFF99A52FC67F88007D5AB1 /* FirebaseAuth */,
 			);
 			productName = ZenATC;
 			productReference = DC1797422FC6487D00F3FCC1 /* ZenATC.app */;
@@ -210,7 +204,6 @@
 			mainGroup = DC1797392FC6487D00F3FCC1;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				DCFF99972FC67D96007D5AB1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = DC1797432FC6487D00F3FCC1 /* Products */;
@@ -414,7 +407,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = J68V93D8QA;
+				DEVELOPMENT_TEAM = PS96HNX5KD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -447,7 +440,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = J68V93D8QA;
+				DEVELOPMENT_TEAM = PS96HNX5KD;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -597,25 +590,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin XCRemoteSwiftPackageReference section */
-		DCFF99972FC67D96007D5AB1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 12.14.0;
-			};
-		};
-/* End XCRemoteSwiftPackageReference section */
-
-/* Begin XCSwiftPackageProductDependency section */
-		DCFF99A52FC67F88007D5AB1 /* FirebaseAuth */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = DCFF99972FC67D96007D5AB1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
-			productName = FirebaseAuth;
-		};
-/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = DC17973A2FC6487D00F3FCC1 /* Project object */;
 }

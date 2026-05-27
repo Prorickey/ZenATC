@@ -8,7 +8,6 @@ import StoreKit
 
 struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
-    let authManager: AuthManager
     let purchaseManager: PurchaseManager
     @Binding var showSettings: Bool
     @Binding var showUpgrade: Bool
@@ -736,6 +735,6 @@ private struct MiniAppScreen: View {
     @Previewable @State var show = true
     @Previewable @State var showUpgrade = false
     @Previewable @State var airportIndex = 0
-    SettingsView(authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show, showUpgrade: $showUpgrade, currentAirportIndex: $airportIndex)
+    SettingsView(purchaseManager: PurchaseManager(), showSettings: $show, showUpgrade: $showUpgrade, currentAirportIndex: $airportIndex)
         .environment(ThemeManager())
 }

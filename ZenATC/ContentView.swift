@@ -6,7 +6,6 @@
 import SwiftUI
 
 struct ContentView: View {
-    let authManager: AuthManager
     let purchaseManager: PurchaseManager
     @State private var audio = AudioManager()
     @State private var themeManager = ThemeManager()
@@ -51,7 +50,6 @@ struct ContentView: View {
             }
 
             SettingsView(
-                authManager: authManager,
                 purchaseManager: purchaseManager,
                 showSettings: $showSettings,
                 showUpgrade: $showUpgrade,
@@ -64,7 +62,6 @@ struct ContentView: View {
 
             if showUpgrade {
                 UpgradeView(
-                    authManager: authManager,
                     purchaseManager: purchaseManager,
                     showUpgrade: $showUpgrade
                 )
@@ -546,5 +543,5 @@ private struct PlayPauseButton: View {
 }
 
 #Preview {
-    ContentView(authManager: AuthManager(), purchaseManager: PurchaseManager())
+    ContentView(purchaseManager: PurchaseManager())
 }

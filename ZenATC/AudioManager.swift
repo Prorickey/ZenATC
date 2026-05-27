@@ -6,8 +6,7 @@
 import AVFoundation
 import Observation
 
-// Change to your Mac's LAN IP when testing on a physical device.
-private let backendBaseURL = "http://192.168.1.87:8080"
+let backendBaseURL = URL(string: "https://zenatc.bedson.tech")!
 
 @Observable
 final class AudioManager {
@@ -25,11 +24,14 @@ final class AudioManager {
 
     // ATC: local bundle file, loops natively via AVAudioPlayer
     private var atcPlayer: AVAudioPlayer?
-    // Lofi: HLS stream from Go backend via AVPlayer
+    // Lofi: VOD HLS stream — starts instantly, downloads ahead, loops from cache
     private var lofiPlayer: AVPlayer?
+    private var lofiItem: AVPlayerItem?
+    private var lofiLoopObserver: Any?
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
+    private let attestationManager = AttestationManager(backendBaseURL: backendBaseURL)
 
     init() {
         configureSession()
@@ -44,10 +46,13 @@ final class AudioManager {
 
     private func startPlayback() {
         if atcPlayer == nil { loadATC() }
-        if lofiPlayer == nil { loadLofi() }
         updateVolumes()
         atcPlayer?.play()
-        lofiPlayer?.play()
+        if lofiPlayer == nil {
+            Task { await loadAndPlayLofi() }
+        } else {
+            lofiPlayer?.play()
+        }
     }
 
     private func pausePlayback() {
@@ -66,13 +71,8 @@ final class AudioManager {
     }
 
     func reloadLofi() {
-        lofiPlayer?.pause()
-        lofiPlayer = nil
-        loadLofi()
-        if isPlaying {
-            updateVolumes()
-            lofiPlayer?.play()
-        }
+        tearDownLofi()
+        Task { await loadAndPlayLofi() }
     }
 
     private func loadATC() {
@@ -85,10 +85,56 @@ final class AudioManager {
         atcPlayer?.prepareToPlay()
     }
 
-    private func loadLofi() {
+    // Fetches a signed CDN URL via attestation, then starts playback.
+    // Falls back to the direct backend URL on Simulator or before CDN is configured.
+    //
+    // Play-through behaviour:
+    //   Pass 1 — AVPlayer streams each 4-second segment from Cloudflare, buffering ahead.
+    //   Pass 2+ — segments are in the local URL cache; playback is fully offline.
+    @MainActor
+    private func loadAndPlayLofi() async {
         let filename = tracks[selectedTrackIndex].filename
-        guard let url = URL(string: "\(backendBaseURL)/radio/\(filename)/index.m3u8") else { return }
-        lofiPlayer = AVPlayer(url: url)
+        let streamURL = await resolveLofiURL(filename: filename)
+
+        // Tear down any previous state before creating new objects.
+        tearDownLofi()
+
+        lofiItem = AVPlayerItem(url: streamURL)
+        lofiPlayer = AVPlayer(playerItem: lofiItem)
+
+        // When the track reaches the end, seek back to the beginning and replay.
+        // On the second loop all segments should already be in the device's URL
+        // cache, so playback restarts without any network requests.
+        lofiLoopObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: lofiItem,
+            queue: .main
+        ) { [weak self] _ in
+            self?.lofiPlayer?.seek(to: .zero)
+            if self?.isPlaying == true { self?.lofiPlayer?.play() }
+        }
+
+        updateVolumes()
+        if isPlaying { lofiPlayer?.play() }
+    }
+
+    private func tearDownLofi() {
+        if let obs = lofiLoopObserver {
+            NotificationCenter.default.removeObserver(obs)
+            lofiLoopObserver = nil
+        }
+        lofiPlayer?.pause()
+        lofiPlayer = nil
+        lofiItem = nil
+    }
+
+    private func resolveLofiURL(filename: String) async -> URL {
+        do {
+            return try await attestationManager.requestStreamURL(for: filename)
+        } catch {
+            // Simulator / CDN not yet configured — fall back to direct backend URL.
+            return backendBaseURL.appendingPathComponent("hls/\(filename)/index.m3u8")
+        }
     }
 
     private func updateVolumes() {

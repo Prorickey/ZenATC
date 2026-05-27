@@ -14,5 +14,19 @@ backend/zenatc-backend
 backend/zenatc
 backend/live/
 
+# Secrets
+.env
+backend/.env
+
+# Audio source files — copy to backend/audio/ manually on the server before deploying.
+# Required files: lofi_energy.mp3, lofi_late_night.mp3, lofi_rainy_day.mp3, lofi_work_flow.mp3
+backend/audio/*.mp3
+
+# Generated HLS segments (built by Dockerfile; regenerate with backend/generate_hls.sh)
+backend/audio/hls/
+
+# Wrangler cache
+backend/cloudflare/.wrangler/
+
 # macOS
 .DS_Store

@@ -1,0 +1,14 @@
+name = "zenatc-hls"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Bind the signing secret as a secret (set via `wrangler secret put`):
+#   wrangler secret put CLOUDFLARE_URL_SIGNING_SECRET
+# The value must be identical to the CLOUDFLARE_URL_SIGNING_SECRET env var
+# used by the backend Go server — both read it as base64-encoded bytes.
+
+[[routes]]
+# Replace zenatc.bedson.tech with the actual Cloudflare zone domain.
+# Example: pattern = "zenatc.example.com/hls/*"
+pattern = "zenatc.bedson.tech/hls/*"
+zone_name = "bedson.tech"
