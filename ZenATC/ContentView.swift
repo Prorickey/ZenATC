@@ -50,16 +50,17 @@ struct ContentView: View {
                 .onChange(of: audio.selectedTrackIndex) { audio.reloadLofi() }
             }
 
-            if showSettings {
-                SettingsView(
-                    authManager: authManager,
-                    purchaseManager: purchaseManager,
-                    showSettings: $showSettings,
-                    showUpgrade: $showUpgrade,
-                    currentAirportIndex: $audio.currentAirportIndex
-                )
-                .transition(.move(edge: .bottom))
-            }
+            SettingsView(
+                authManager: authManager,
+                purchaseManager: purchaseManager,
+                showSettings: $showSettings,
+                showUpgrade: $showUpgrade,
+                currentAirportIndex: $audio.currentAirportIndex
+            )
+            .offset(y: showSettings ? 0 : 1000)
+            .opacity(showSettings ? 1 : 0)
+            .allowsHitTesting(showSettings)
+            .zIndex(3)
 
             if showUpgrade {
                 UpgradeView(
@@ -72,7 +73,7 @@ struct ContentView: View {
 
             if showAirports {
                 AirportsListView(showAirports: $showAirports, currentAirportIndex: $audio.currentAirportIndex)
-                    .transition(.move(edge: .bottom))
+                    .transition(.move(edge: .top))
                     .zIndex(2)
             }
 
@@ -234,7 +235,6 @@ private struct BottomControlsView: View {
     @Binding var selectedTrackIndex: Int
     @Binding var showTrackPicker: Bool
     @Environment(ThemeManager.self) private var themeManager
-
     var body: some View {
         VStack(spacing: 0) {
             MixerSliderView(balance: $balance)
@@ -243,38 +243,41 @@ private struct BottomControlsView: View {
             PlayPauseButton(isPlaying: $isPlaying)
                 .padding(.top, 16)
 
-            Group {
-                if showTrackPicker {
-                    InlineTrackPicker(
-                        tracks: tracks,
-                        selectedIndex: $selectedTrackIndex,
-                        onConfirm: {
-                            withAnimation(.spring(duration: 0.45)) {
-                                showTrackPicker = false
-                            }
-                        }
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
-                    .padding(.top, 20)
-                    .padding(.bottom, 36)
-                } else {
-                    Button {
+            // Picker and title share a fixed-height ZStack so no layout animation
+            // competes with drag tracking. Visual transforms only.
+            ZStack {
+                InlineTrackPicker(
+                    tracks: tracks,
+                    selectedIndex: $selectedTrackIndex,
+                    isExpanded: showTrackPicker,
+                    onConfirm: {
                         withAnimation(.spring(duration: 0.45)) {
-                            showTrackPicker = true
+                            showTrackPicker = false
                         }
-                    } label: {
-                        Text(tracks[selectedTrackIndex].name)
-                            .font(.system(size: 34.77, weight: .semibold))
-                            .kerning(0)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(themeManager.theme.foreground)
                     }
-                    .transition(.opacity)
-                    .padding(.top, 28)
-                    .padding(.bottom, 36)
+                )
+                .allowsHitTesting(showTrackPicker)
+                .opacity(showTrackPicker ? 1 : 0)
+
+                Button {
+                    withAnimation(.spring(duration: 0.45)) {
+                        showTrackPicker = true
+                    }
+                } label: {
+                    Text(tracks[selectedTrackIndex].name)
+                        .font(.system(size: 34.77, weight: .semibold))
+                        .kerning(0)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(themeManager.theme.foreground)
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .allowsHitTesting(!showTrackPicker)
+                .opacity(showTrackPicker ? 0 : 1)
+                .offset(y: showTrackPicker ? -20 : 0)
             }
-            .animation(.spring(duration: 0.45), value: showTrackPicker)
+            .padding(.top, 16)
+            .padding(.bottom, 36)
+            .animation(.spring(duration: 0.4), value: showTrackPicker)
         }
         .padding(.top, 10)
     }
@@ -285,12 +288,14 @@ private struct BottomControlsView: View {
 private struct InlineTrackPicker: View {
     let tracks: [LofiTrack]
     @Binding var selectedIndex: Int
+    let isExpanded: Bool
     let onConfirm: () -> Void
     @Environment(ThemeManager.self) private var themeManager
 
     private let itemHeight: CGFloat = 52
     private let visibleCount = 3
     @State private var dragOffset: CGFloat = 0
+    @State private var textWidths: [Int: CGFloat] = [:]
 
     private func centredIndex(drag: CGFloat) -> Int {
         let raw = Double(selectedIndex) - Double(drag) / Double(itemHeight)
@@ -302,35 +307,55 @@ private struct InlineTrackPicker: View {
         let baseOffset = totalHeight / 2 - itemHeight / 2 - CGFloat(selectedIndex) * itemHeight
         let rawCenter = Double(selectedIndex) - Double(dragOffset) / Double(itemHeight)
 
-        VStack(spacing: 0) {
-            ForEach(tracks.indices, id: \.self) { i in
-                let dist = abs(Double(i) - rawCenter)
-                let size = CGFloat(28) + CGFloat(max(0, 1 - dist)) * 6.77
-                let opacity = max(0.15, 1.0 - dist * 0.55)
+        GeometryReader { geo in
+            let availableWidth = geo.size.width - 32
 
-                Text(tracks[i].name)
-                    .font(.system(size: size, weight: dist < 0.5 ? .semibold : .regular))
-                    .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
-                    .frame(height: itemHeight)
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if i == selectedIndex && dragOffset == 0 {
-                            onConfirm()
-                        } else {
-                            withAnimation(.spring(duration: 0.3)) {
-                                selectedIndex = i
-                                dragOffset = 0
+            VStack(spacing: 0) {
+                ForEach(tracks.indices, id: \.self) { i in
+                    let dist = abs(Double(i) - rawCenter)
+                    let size = CGFloat(28) + CGFloat(max(0, 1 - dist)) * 6.77
+                    let opacity = max(0.15, 1.0 - dist * 0.55)
+                    let fits = (textWidths[i] ?? 0) <= availableWidth
+                    let isSelected = i == selectedIndex
+
+                    Text(tracks[i].name)
+                        .font(.system(size: isSelected ? 34.77 : size, weight: dist < 0.5 ? .semibold : .regular))
+                        .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: TextWidthKey.self, value: [i: proxy.size.width])
+                            }
+                        )
+                        .frame(height: fits ? itemHeight : 0)
+                        .frame(maxWidth: .infinity)
+                        .opacity(fits ? (isSelected ? 1 : (isExpanded ? 1 : 0)) : 0)
+                        .animation(.easeInOut(duration: 0.25).delay(isSelected ? 0 : 0.12), value: isExpanded)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if i == selectedIndex && dragOffset == 0 {
+                                onConfirm()
+                            } else {
+                                withAnimation(.spring(duration: 0.3)) {
+                                    selectedIndex = i
+                                    dragOffset = 0
+                                }
                             }
                         }
-                    }
+                }
+            }
+            .offset(y: baseOffset + dragOffset)
+            .onPreferenceChange(TextWidthKey.self) { value in
+                textWidths.merge(value) { _, new in new }
             }
         }
-        .offset(y: baseOffset + dragOffset)
         .gesture(
-            DragGesture(minimumDistance: 5)
+            DragGesture(minimumDistance: 1)
                 .onChanged { value in
-                    dragOffset = value.translation.height
+                    withAnimation(.none) {
+                        dragOffset = value.translation.height
+                    }
                 }
                 .onEnded { value in
                     let newIndex = centredIndex(drag: value.predictedEndTranslation.height)
@@ -340,8 +365,17 @@ private struct InlineTrackPicker: View {
                     }
                 }
         )
+        .sensoryFeedback(.selection, trigger: selectedIndex)
         .frame(height: totalHeight)
         .clipped()
+    }
+}
+
+private struct TextWidthKey: PreferenceKey {
+    static var defaultValue: [Int: CGFloat] = [:]
+
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+        value.merge(nextValue()) { _, new in new }
     }
 }
 
