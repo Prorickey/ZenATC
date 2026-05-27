@@ -132,35 +132,21 @@ private struct LiveIndicatorView: View {
     let isPlaying: Bool
     let pausedColor: Color
     @Environment(ThemeManager.self) private var themeManager
-    private let liveDotSize: CGFloat = 14
-    private let haloDotSize: CGFloat = 26
+    private let liveDotSize: CGFloat = 10
+    private let radarDiameter: CGFloat = 22
     private let pauseBarWidth: CGFloat = 4
     private let pauseBarHeight: CGFloat = 12
     private let pauseBarSpacing: CGFloat = 4
-    private let ripplePeriod: Double = 5
+    private let sweepPeriod: Double = 3.5
 
     var body: some View {
         ZStack {
             if isPlaying {
-                Circle()
-                    .fill(themeManager.theme.foreground.opacity(0.18))
-                    .frame(width: haloDotSize, height: haloDotSize)
-
-                // Each ripple's phase is derived purely from wall-clock time —
-                // no animation state to reset, so the loop is perfectly seamless.
                 TimelineView(.periodic(from: .now, by: 1.0 / 60.0)) { timeline in
                     let t = timeline.date.timeIntervalSince1970
-                    ZStack {
-                        ForEach(0..<3, id: \.self) { index in
-                            let offset = Double(index) / 3.0
-                            let phase = (t / ripplePeriod + offset).truncatingRemainder(dividingBy: 1.0)
-                            Circle()
-                                .stroke(themeManager.theme.foreground.opacity(0.5), lineWidth: 2)
-                                .frame(width: 24, height: 24)
-                                .scaleEffect(0.65 + CGFloat(phase) * 1.05)
-                                .opacity(pow(1.0 - phase, 1.8) * 0.72)
-                        }
-                    }
+                    let fraction = (t / sweepPeriod).truncatingRemainder(dividingBy: 1.0)
+                    RadarSweepView(fraction: fraction, color: themeManager.theme.foreground)
+                        .frame(width: radarDiameter, height: radarDiameter)
                 }
             }
 
@@ -177,9 +163,56 @@ private struct LiveIndicatorView: View {
                 barSpacing: pauseBarSpacing
             )
             .opacity(isPlaying ? 0 : 1)
-            .scaleEffect(isPlaying ? 0.2 : 1)
+            .scaleEffect(isPlaying ? 0.88 : 1)
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: isPlaying)
+    }
+}
+
+private struct RadarSweepView: View {
+    let fraction: Double
+    let color: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            let radius = size.width / 2 - 1
+
+            // Filled dim disc — low-opacity radar screen background
+            var disc = Path()
+            disc.addEllipse(in: CGRect(x: center.x - radius, y: center.y - radius,
+                                       width: radius * 2, height: radius * 2))
+            context.fill(disc, with: .color(color.opacity(0.10)))
+
+            // Static halo ring
+            context.stroke(disc, with: .color(color.opacity(0.30)), lineWidth: 1.5)
+
+            // Sweep line angle: start from top (−π/2), rotate clockwise
+            let currentAngle = fraction * 2 * .pi - .pi / 2
+            let trailArc: Double = .pi / 2  // 90° fading trail
+
+            // Trail: 20 arc segments fading from transparent at tail to solid at the line
+            let segments = 20
+            for i in 0..<segments {
+                let t0 = Double(i) / Double(segments)
+                let t1 = Double(i + 1) / Double(segments)
+                let a0 = currentAngle - trailArc + t0 * trailArc
+                let a1 = currentAngle - trailArc + t1 * trailArc
+                var arc = Path()
+                arc.addArc(center: center, radius: radius - 0.75,
+                           startAngle: .radians(a0), endAngle: .radians(a1), clockwise: false)
+                context.stroke(arc, with: .color(color.opacity(t0 * 0.65)), lineWidth: 2.0)
+            }
+
+            // Sweep line from center to ring edge
+            var line = Path()
+            line.move(to: center)
+            line.addLine(to: CGPoint(
+                x: center.x + cos(currentAngle) * radius,
+                y: center.y + sin(currentAngle) * radius
+            ))
+            context.stroke(line, with: .color(color.opacity(0.90)), lineWidth: 1.5)
+        }
     }
 }
 
