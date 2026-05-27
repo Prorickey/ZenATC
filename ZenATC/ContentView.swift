@@ -138,15 +138,14 @@ private struct TopBarView: View {
     @Binding var showAirports: Bool
     @Binding var isPlaying: Bool
     @Environment(ThemeManager.self) private var themeManager
-    private let pausedColor = Color(red: 0.878, green: 0.298, blue: 0.149)
 
     var body: some View {
         HStack(spacing: 10) {
-            LiveIndicatorView(isPlaying: isPlaying, pausedColor: pausedColor)
+            LiveIndicatorView(isPlaying: isPlaying, pausedColor: themeManager.theme.foreground)
 
             AnimatedStatusText(
                 text: isPlaying ? "LIVE" : "Paused",
-                color: isPlaying ? themeManager.theme.foreground : pausedColor
+                color: themeManager.theme.foreground
             )
 
             Spacer()
@@ -452,6 +451,8 @@ private struct BottomControlsView: View {
                 )
                 .allowsHitTesting(showTrackPicker)
                 .opacity(showTrackPicker ? 1 : 0)
+                .offset(y: showTrackPicker ? -80 : 25)
+                .animation(.spring(response: 0.45, dampingFraction: 0.85), value: showTrackPicker)
 
                 Button {
                     withAnimation(.spring(duration: 0.45)) {
@@ -468,11 +469,11 @@ private struct BottomControlsView: View {
                 .frame(maxWidth: .infinity, alignment: .center)
                 .allowsHitTesting(!showTrackPicker)
                 .opacity(showTrackPicker ? 0 : 1)
-                .offset(y: showTrackPicker ? -20 : 0)
+                .offset(y: showTrackPicker ? -45 : -18)
+                .animation(.easeOut(duration: 0.22), value: showTrackPicker)
             }
             .padding(.top, 16)
             .padding(.bottom, 36)
-            .animation(.spring(duration: 0.4), value: showTrackPicker)
         }
         .padding(.top, 10)
     }
