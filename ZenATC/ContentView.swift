@@ -526,7 +526,9 @@ private struct PlayPauseButton: View {
 
     var body: some View {
         Button {
-            isPlaying.toggle()
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isPlaying.toggle()
+            }
         } label: {
             ZStack {
                 Circle()
@@ -537,8 +539,10 @@ private struct PlayPauseButton: View {
                     .font(.system(size: 28, weight: .medium))
                     .foregroundStyle(isPlaying ? themeManager.theme.foreground : themeManager.theme.background)
                     .offset(x: isPlaying ? 0 : 2)
+                    .contentTransition(.symbolEffect(.replace))
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: isPlaying)
     }
 }
 
