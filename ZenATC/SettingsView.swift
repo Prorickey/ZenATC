@@ -11,9 +11,11 @@ struct SettingsView: View {
     let authManager: AuthManager
     let purchaseManager: PurchaseManager
     @Binding var showSettings: Bool
-    @State private var showUpgradeView = false
+    @Binding var showUpgrade: Bool
+    @Binding var currentAirportIndex: Int
 
-    private let settingsAccent = Color(red: 0.878, green: 0.298, blue: 0.149)
+    @State private var showAirportsList = false
+    @State private var selectedAudioPackIDs: Set<UUID> = []
 
     private let appearanceColors: [Color] = [
         Color(red: 0.91, green: 0.28, blue: 0.16),
@@ -31,7 +33,7 @@ struct SettingsView: View {
     private let audioPacks: [AudioPack] = [
         AudioPack(title: "Cold Ice", subtitle: "Medium-energy Lo-Fi", isPro: false),
         AudioPack(title: "Cloudsurfing", subtitle: "Medium-energy Lo-Fi", isPro: false),
-        AudioPack(title: "Cloudsurfing", subtitle: "Medium-energy Lo-Fi", isPro: true),
+        AudioPack(title: "Cloudsurfing", subtitle: "Medium-energy Lo-Fi", isPro: false),
         AudioPack(title: "Airport Terminal", subtitle: "Medium-energy Lo-Fi", isPro: true),
         AudioPack(title: "Retrowave", subtitle: "Medium-energy Lo-Fi", isPro: true),
         AudioPack(title: "Thunderstorms", subtitle: "Medium-energy Lo-Fi", isPro: true),
@@ -59,27 +61,28 @@ struct SettingsView: View {
                 }
                 .padding(.bottom, 30)
             }
+
+            if showAirportsList {
+                AirportsListView(showAirports: $showAirportsList, currentAirportIndex: $currentAirportIndex, showUpgrade: $showUpgrade)
+                    .transition(.move(edge: .bottom))
+                    .zIndex(1)
+            }
         }
-        .sheet(isPresented: $showUpgradeView) {
-            UpgradeView(
-                authManager: authManager,
-                purchaseManager: purchaseManager,
-                showUpgrade: $showUpgradeView
-            )
-            .environment(themeManager)
-        }
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirportsList)
     }
 
     private func handleUpgradeTap() {
         guard !purchaseManager.isPro else { return }
-        showUpgradeView = true
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+            showUpgrade = true
+        }
     }
 
     private var header: some View {
         HStack(alignment: .center) {
             Text("Settings")
                 .font(.system(size: 34.77, weight: .bold))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
 
             Spacer()
 
@@ -88,9 +91,9 @@ struct SettingsView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(settingsAccent)
+                    .foregroundStyle(themeManager.theme.foreground)
                     .frame(width: 42.24, height: 42.24)
-                    .background(settingsAccent.opacity(0.12))
+                    .background(themeManager.theme.foreground.opacity(0.12))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
@@ -103,7 +106,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("App appearance")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
 
             HStack(spacing: 12) {
                 ForEach(0..<3, id: \.self) { index in
@@ -117,7 +120,7 @@ struct SettingsView: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .stroke(settingsAccent, lineWidth: 1.5)
+                                .stroke(themeManager.theme.foreground, lineWidth: 1.5)
                                 .frame(width: 52, height: 52)
                                 .opacity(isSelected ? 1 : 0)
 
@@ -138,7 +141,7 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Text("+ 7 more in")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(settingsAccent)
+                        .foregroundStyle(themeManager.theme.foreground)
                     ProBadge()
                 }
             }
@@ -150,7 +153,7 @@ struct SettingsView: View {
         VStack(spacing: 14) {
             Text("Unlock more music, custom ATC audio filters, and 50 more airports")
                 .font(.system(size: 19.23, weight: .medium))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
                 .multilineTextAlignment(.center)
                 .frame(width: 330)
 
@@ -161,13 +164,13 @@ struct SettingsView: View {
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(themeManager.theme.background)
                     .frame(width: 200, height: 60)
-                    .background(settingsAccent)
+                    .background(themeManager.theme.foreground)
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
         }
         .frame(width: 370, height: 204)
-        .background(settingsAccent.opacity(0.13))
+        .background(themeManager.theme.foreground.opacity(0.13))
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .frame(maxWidth: .infinity)
     }
@@ -177,29 +180,29 @@ struct SettingsView: View {
             HStack(spacing: 8.5) {
                 Text("ATC radio filters")
                     .font(.system(size: 29.56, weight: .semibold))
-                    .foregroundStyle(settingsAccent)
+                    .foregroundStyle(themeManager.theme.foreground)
 
                 Text("PRO")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(themeManager.theme.background)
                     .frame(width: 42.51, height: 23.51)
-                    .background(settingsAccent)
+                    .background(themeManager.theme.foreground)
                     .clipShape(RoundedRectangle(cornerRadius: 5.91))
             }
 
             VStack(spacing: 11) {
                 ForEach(filters) { filter in
-                    FilterRow(filter: filter, accent: settingsAccent)
+                    FilterRow(filter: filter, accent: themeManager.theme.foreground)
                 }
 
                 HStack {
                     Spacer()
                     Text("Try it")
                         .font(.system(size: 20.95, weight: .semibold))
-                        .foregroundStyle(settingsAccent)
+                        .foregroundStyle(themeManager.theme.foreground)
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(settingsAccent)
+                        .foregroundStyle(themeManager.theme.foreground)
                         .rotationEffect(.degrees(-20))
                 }
                 .padding(.trailing, 4)
@@ -230,6 +233,7 @@ struct SettingsView: View {
             }
 
             Button {
+                showAirportsList = true
             } label: {
                 Text("See the list")
                     .font(.system(size: 12, weight: .semibold))
@@ -249,25 +253,43 @@ struct SettingsView: View {
     }
 
     private var audioPacksSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                sectionTitle("Audio packs")
+        VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Audio packs")
+                    .font(.system(size: 29.56, weight: .semibold))
+                    .foregroundStyle(themeManager.theme.foreground)
                 Text("Select up to 3")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(themeManager.theme.foreground.opacity(0.7))
+                    .foregroundStyle(themeManager.theme.foreground)
             }
 
             VStack(spacing: 10) {
                 ForEach(audioPacks) { pack in
-                    AudioPackRow(pack: pack)
+                    AudioPackRow(
+                        pack: pack,
+                        accent: themeManager.theme.foreground,
+                        isSelected: selectedAudioPackIDs.contains(pack.id)
+                    ) {
+                        toggleAudioPack(pack.id)
+                    }
                 }
             }
         }
         .padding(.horizontal, 20)
     }
 
+    private func toggleAudioPack(_ id: UUID) {
+        if selectedAudioPackIDs.contains(id) {
+            selectedAudioPackIDs.remove(id)
+            return
+        }
+
+        guard selectedAudioPackIDs.count < 3 else { return }
+        selectedAudioPackIDs.insert(id)
+    }
+
     private var premiumAudioCard: some View {
-        PremiumAudioCard(accent: settingsAccent)
+        PremiumAudioCard(accent: themeManager.theme.foreground)
             .padding(.horizontal, 20)
     }
 
@@ -296,12 +318,14 @@ struct SettingsView: View {
 
     private var makeItYours: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("Make it your own")
+            Text("MAKE IT YOUR OWN")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
+                .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.horizontal, 20)
+        
 
-            ThemeCarousel(accent: settingsAccent, interval: 3.0)
+            ThemeCarousel(accent: themeManager.theme.foreground, interval: 3.0)
         }
     }
 
@@ -309,7 +333,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Boring stuff")
                 .font(.system(size: 29.56, weight: .bold))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
 
             HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 18) {
@@ -325,7 +349,7 @@ struct SettingsView: View {
                 }
             }
             .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(settingsAccent)
+            .foregroundStyle(themeManager.theme.foreground)
         }
         .padding(12)
         .clipShape(RoundedRectangle(cornerRadius: 20))
@@ -429,42 +453,62 @@ private struct AudioPack: Identifiable {
 }
 
 private struct AudioPackRow: View {
-    @Environment(ThemeManager.self) private var themeManager
     let pack: AudioPack
+    let accent: Color
+    let isSelected: Bool
+    let onTap: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            Circle()
-                .fill(themeManager.theme.foreground.opacity(0.15))
-                .frame(width: 8, height: 8)
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Circle()
+                    .strokeBorder(
+                        isSelected ? Color.white : accent.opacity(0.4),
+                        lineWidth: isSelected ? 2 : 1
+                    )
+                    .background(Circle().fill(isSelected ? Color.clear : accent.opacity(0.12)))
+                    .frame(width: 22, height: 22)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(pack.title)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(themeManager.theme.foreground)
-                    if pack.isPro {
-                        ProBadge()
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(pack.title)
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(isSelected ? Color.white : accent)
+                        if pack.isPro {
+                            Text("PRO")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(isSelected ? accent : Color.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(isSelected ? Color.white : accent)
+                                .clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
                     }
+                    Text(pack.subtitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : accent.opacity(0.65))
                 }
-                Text(pack.subtitle)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(themeManager.theme.foreground.opacity(0.6))
+
+                Spacer()
+
+                Circle()
+                    .fill(isSelected ? Color.white : accent)
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(isSelected ? accent : Color.white)
+                            .offset(x: 1.5)
+                    )
             }
-
-            Spacer()
-
-            Image(systemName: "play.fill")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(themeManager.theme.background)
-                .frame(width: 22, height: 22)
-                .background(themeManager.theme.foreground)
-                .clipShape(Circle())
+            .padding(.horizontal, 16)
+            .frame(height: 69)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(isSelected ? accent : accent.opacity(0.1))
+            )
         }
-        .padding(.vertical, 10)
-        .padding(.horizontal, 14)
-        .background(themeManager.theme.foreground.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .buttonStyle(.plain)
     }
 }
 
@@ -575,42 +619,37 @@ private struct ThemeCarousel: View {
     let accent: Color
     let interval: Double
 
-    @State private var currentIndex = 0
-    @State private var autoTimer: Timer?
-
-    private let airports = ["LAX", "JFK", "SFO", "ORD", "LHR", "LGA"]
+    private let imageNames = ["carousel1", "carousel2", "carousel3", "carousel4"]
+    @State private var offset: CGFloat = 0
 
     var body: some View {
-        VStack(spacing: 14) {
-            TabView(selection: $currentIndex) {
-                ForEach(AppTheme.all.indices, id: \.self) { index in
-                    MiniAppScreen(
-                        theme: AppTheme.all[index],
-                        airportCode: airports[index % airports.count]
-                    )
-                    .tag(index)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 454)
+        GeometryReader { proxy in
+            let cardWidth = proxy.size.width * 0.64
+            let cardHeight: CGFloat = 520
+            let spacing: CGFloat = 16
+            let stride = cardWidth + spacing
+            let totalWidth = stride * CGFloat(imageNames.count)
 
-            HStack(spacing: 6) {
-                ForEach(AppTheme.all.indices, id: \.self) { index in
-                    Capsule()
-                        .fill(accent.opacity(index == currentIndex ? 1 : 0.3))
-                        .frame(width: index == currentIndex ? 18 : 6, height: 6)
-                        .animation(.easeInOut(duration: 0.25), value: currentIndex)
+            HStack(spacing: spacing) {
+                ForEach(0..<(imageNames.count * 2), id: \.self) { index in
+                    let name = imageNames[index % imageNames.count]
+                    Image(name)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: cardWidth, height: cardHeight)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 28))
+                }
+            }
+            .offset(x: offset)
+            .onAppear {
+                offset = 0
+                withAnimation(.linear(duration: interval * Double(imageNames.count)).repeatForever(autoreverses: false)) {
+                    offset = -totalWidth
                 }
             }
         }
-        .onAppear {
-            autoTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
-                withAnimation(.easeInOut(duration: 0.4)) {
-                    currentIndex = (currentIndex + 1) % AppTheme.all.count
-                }
-            }
-        }
-        .onDisappear { autoTimer?.invalidate() }
+        .frame(height: 520)
     }
 }
 
@@ -695,6 +734,8 @@ private struct MiniAppScreen: View {
 
 #Preview {
     @Previewable @State var show = true
-    SettingsView(authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show)
+    @Previewable @State var showUpgrade = false
+    @Previewable @State var airportIndex = 0
+    SettingsView(authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show, showUpgrade: $showUpgrade, currentAirportIndex: $airportIndex)
         .environment(ThemeManager())
 }

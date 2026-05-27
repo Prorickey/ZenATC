@@ -7,7 +7,7 @@ import AVFoundation
 import Observation
 
 // Change to your Mac's LAN IP when testing on a physical device.
-private let backendBaseURL = "http://192.168.1.85:8080"
+private let backendBaseURL = "http://192.168.1.87:8080"
 
 @Observable
 final class AudioManager {

@@ -6,12 +6,13 @@
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(AuthManager.self) private var authManager
-    @Environment(PurchaseManager.self) private var purchaseManager
+    let authManager: AuthManager
+    let purchaseManager: PurchaseManager
     @State private var audio = AudioManager()
     @State private var themeManager = ThemeManager()
     @State private var showTrackPicker = false
     @State private var showSettings = false
+    @State private var showUpgrade = false
     @State private var showAirports = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
@@ -49,16 +50,36 @@ struct ContentView: View {
                 .onChange(of: audio.selectedTrackIndex) { audio.reloadLofi() }
             }
 
-            if showSettings {
-                SettingsView(authManager: authManager, purchaseManager: purchaseManager, showSettings: $showSettings)
-                    .transition(.move(edge: .top))
-                    .zIndex(1)
+            SettingsView(
+                authManager: authManager,
+                purchaseManager: purchaseManager,
+                showSettings: $showSettings,
+                showUpgrade: $showUpgrade,
+                currentAirportIndex: $audio.currentAirportIndex
+            )
+            .offset(y: showSettings ? 0 : 1000)
+            .opacity(showSettings ? 1 : 0)
+            .allowsHitTesting(showSettings)
+            .zIndex(3)
+
+            if showUpgrade {
+                UpgradeView(
+                    authManager: authManager,
+                    purchaseManager: purchaseManager,
+                    showUpgrade: $showUpgrade
+                )
+                .transition(.move(edge: .bottom))
+                .zIndex(4)
             }
 
             if showAirports {
-                AirportsListView(showAirports: $showAirports, currentAirportIndex: $audio.currentAirportIndex)
-                    .transition(.move(edge: .top))
-                    .zIndex(2)
+                AirportsListView(
+                    showAirports: $showAirports,
+                    currentAirportIndex: $audio.currentAirportIndex,
+                    showUpgrade: $showUpgrade
+                )
+                .transition(.move(edge: .top))
+                .zIndex(2)
             }
 
             if !hasCompletedOnboarding {
@@ -67,7 +88,9 @@ struct ContentView: View {
                     .zIndex(10)
             }
         }
+        .onAppear { hasCompletedOnboarding = false }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showUpgrade)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirports)
         .animation(.easeInOut(duration: 0.6), value: hasCompletedOnboarding)
         .environment(themeManager)
@@ -218,7 +241,6 @@ private struct BottomControlsView: View {
     @Binding var selectedTrackIndex: Int
     @Binding var showTrackPicker: Bool
     @Environment(ThemeManager.self) private var themeManager
-
     var body: some View {
         VStack(spacing: 0) {
             MixerSliderView(balance: $balance)
@@ -227,38 +249,41 @@ private struct BottomControlsView: View {
             PlayPauseButton(isPlaying: $isPlaying)
                 .padding(.top, 16)
 
-            Group {
-                if showTrackPicker {
-                    InlineTrackPicker(
-                        tracks: tracks,
-                        selectedIndex: $selectedTrackIndex,
-                        onConfirm: {
-                            withAnimation(.spring(duration: 0.45)) {
-                                showTrackPicker = false
-                            }
-                        }
-                    )
-                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottom)))
-                    .padding(.top, 20)
-                    .padding(.bottom, 36)
-                } else {
-                    Button {
+            // Picker and title share a fixed-height ZStack so no layout animation
+            // competes with drag tracking. Visual transforms only.
+            ZStack {
+                InlineTrackPicker(
+                    tracks: tracks,
+                    selectedIndex: $selectedTrackIndex,
+                    isExpanded: showTrackPicker,
+                    onConfirm: {
                         withAnimation(.spring(duration: 0.45)) {
-                            showTrackPicker = true
+                            showTrackPicker = false
                         }
-                    } label: {
-                        Text(tracks[selectedTrackIndex].name)
-                            .font(.system(size: 34.77, weight: .semibold))
-                            .kerning(0)
-                            .multilineTextAlignment(.center)
-                            .foregroundStyle(themeManager.theme.foreground)
                     }
-                    .transition(.opacity)
-                    .padding(.top, 28)
-                    .padding(.bottom, 36)
+                )
+                .allowsHitTesting(showTrackPicker)
+                .opacity(showTrackPicker ? 1 : 0)
+
+                Button {
+                    withAnimation(.spring(duration: 0.45)) {
+                        showTrackPicker = true
+                    }
+                } label: {
+                    Text(tracks[selectedTrackIndex].name)
+                        .font(.system(size: 34.77, weight: .semibold))
+                        .kerning(0)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(themeManager.theme.foreground)
                 }
+                .frame(maxWidth: .infinity, alignment: .center)
+                .allowsHitTesting(!showTrackPicker)
+                .opacity(showTrackPicker ? 0 : 1)
+                .offset(y: showTrackPicker ? -20 : 0)
             }
-            .animation(.spring(duration: 0.45), value: showTrackPicker)
+            .padding(.top, 16)
+            .padding(.bottom, 36)
+            .animation(.spring(duration: 0.4), value: showTrackPicker)
         }
         .padding(.top, 10)
     }
@@ -269,12 +294,14 @@ private struct BottomControlsView: View {
 private struct InlineTrackPicker: View {
     let tracks: [LofiTrack]
     @Binding var selectedIndex: Int
+    let isExpanded: Bool
     let onConfirm: () -> Void
     @Environment(ThemeManager.self) private var themeManager
 
     private let itemHeight: CGFloat = 52
     private let visibleCount = 3
     @State private var dragOffset: CGFloat = 0
+    @State private var textWidths: [Int: CGFloat] = [:]
 
     private func centredIndex(drag: CGFloat) -> Int {
         let raw = Double(selectedIndex) - Double(drag) / Double(itemHeight)
@@ -286,35 +313,55 @@ private struct InlineTrackPicker: View {
         let baseOffset = totalHeight / 2 - itemHeight / 2 - CGFloat(selectedIndex) * itemHeight
         let rawCenter = Double(selectedIndex) - Double(dragOffset) / Double(itemHeight)
 
-        VStack(spacing: 0) {
-            ForEach(tracks.indices, id: \.self) { i in
-                let dist = abs(Double(i) - rawCenter)
-                let size = CGFloat(28) + CGFloat(max(0, 1 - dist)) * 6.77
-                let opacity = max(0.15, 1.0 - dist * 0.55)
+        GeometryReader { geo in
+            let availableWidth = geo.size.width - 32
 
-                Text(tracks[i].name)
-                    .font(.system(size: size, weight: dist < 0.5 ? .semibold : .regular))
-                    .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
-                    .frame(height: itemHeight)
-                    .frame(maxWidth: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        if i == selectedIndex && dragOffset == 0 {
-                            onConfirm()
-                        } else {
-                            withAnimation(.spring(duration: 0.3)) {
-                                selectedIndex = i
-                                dragOffset = 0
+            VStack(spacing: 0) {
+                ForEach(tracks.indices, id: \.self) { i in
+                    let dist = abs(Double(i) - rawCenter)
+                    let size = CGFloat(28) + CGFloat(max(0, 1 - dist)) * 6.77
+                    let opacity = max(0.15, 1.0 - dist * 0.55)
+                    let fits = (textWidths[i] ?? 0) <= availableWidth
+                    let isSelected = i == selectedIndex
+
+                    Text(tracks[i].name)
+                        .font(.system(size: isSelected ? 34.77 : size, weight: dist < 0.5 ? .semibold : .regular))
+                        .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .background(
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: TextWidthKey.self, value: [i: proxy.size.width])
+                            }
+                        )
+                        .frame(height: fits ? itemHeight : 0)
+                        .frame(maxWidth: .infinity)
+                        .opacity(fits ? (isSelected ? 1 : (isExpanded ? 1 : 0)) : 0)
+                        .animation(.easeInOut(duration: 0.25).delay(isSelected ? 0 : 0.12), value: isExpanded)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            if i == selectedIndex && dragOffset == 0 {
+                                onConfirm()
+                            } else {
+                                withAnimation(.spring(duration: 0.3)) {
+                                    selectedIndex = i
+                                    dragOffset = 0
+                                }
                             }
                         }
-                    }
+                }
+            }
+            .offset(y: baseOffset + dragOffset)
+            .onPreferenceChange(TextWidthKey.self) { value in
+                textWidths.merge(value) { _, new in new }
             }
         }
-        .offset(y: baseOffset + dragOffset)
         .gesture(
-            DragGesture(minimumDistance: 5)
+            DragGesture(minimumDistance: 1)
                 .onChanged { value in
-                    dragOffset = value.translation.height
+                    withAnimation(.none) {
+                        dragOffset = value.translation.height
+                    }
                 }
                 .onEnded { value in
                     let newIndex = centredIndex(drag: value.predictedEndTranslation.height)
@@ -324,8 +371,17 @@ private struct InlineTrackPicker: View {
                     }
                 }
         )
+        .sensoryFeedback(.selection, trigger: selectedIndex)
         .frame(height: totalHeight)
         .clipped()
+    }
+}
+
+private struct TextWidthKey: PreferenceKey {
+    static var defaultValue: [Int: CGFloat] = [:]
+
+    static func reduce(value: inout [Int: CGFloat], nextValue: () -> [Int: CGFloat]) {
+        value.merge(nextValue()) { _, new in new }
     }
 }
 
@@ -365,38 +421,69 @@ private struct MixerSliderView: View {
             let baseCenter = baseThumbLeft + (thumbWidth / 2)
             let desiredCenter = baseCenter + (targetCenter - baseCenter) * smoothProgress
             let thumbX = desiredCenter - (thumbWidth / 2)
-            let thumbLeft = thumbX
-            let thumbRight = thumbX + thumbWidth
             let bumpScale = 1 + 0.04 * smoothProgress
-            let leftCovered = thumbLeft <= leftIconCenter && leftIconCenter <= thumbRight
-            let rightCovered = thumbLeft <= rightIconCenter && rightIconCenter <= thumbRight
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(themeManager.theme.foreground.opacity(0.2))
                     .frame(height: trackHeight)
 
+                // Base icons in fg — drawn before the pill so they show outside it
+                Image(systemName: "headphones")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(themeManager.theme.foreground)
+                    .frame(width: iconFrame)
+                    .offset(x: iconInset)
+
+                Image(systemName: "airplane")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(themeManager.theme.foreground)
+                    .frame(width: iconFrame)
+                    .offset(x: geo.size.width - iconInset - iconFrame)
+
+                // Pill
                 Capsule()
                     .fill(themeManager.theme.foreground)
                     .frame(width: thumbWidth, height: thumbHeight)
                     .mask(alignment: .center) {
                         RoundedRectangle(cornerRadius: thumbHeight / 2)
                             .frame(width: clipWidth, height: thumbHeight)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
+                            .animation(.easeOut(duration: 0.40), value: smoothProgress)
                     }
                     .scaleEffect(x: 1, y: bumpScale, anchor: .center)
                     .offset(x: thumbX)
 
-                Image(systemName: "headphones")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(leftCovered ? themeManager.theme.background : themeManager.theme.foreground)
-                    .frame(width: iconFrame)
-                    .offset(x: iconInset)
+                // White icons masked to the pill shape — visible only where pill covers them
+                ZStack(alignment: .leading) {
+                    Color.clear
 
-                Image(systemName: "airplane")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(rightCovered ? themeManager.theme.background : themeManager.theme.foreground)
-                    .frame(width: iconFrame)
-                    .offset(x: geo.size.width - iconInset - iconFrame)
+                    Image(systemName: "headphones")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.white)
+                        .opacity(0.65)
+                        .frame(width: iconFrame)
+                        .offset(x: iconInset)
+
+                    Image(systemName: "airplane")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.white)
+                        .opacity(0.65)
+                        .frame(width: iconFrame)
+                        .offset(x: geo.size.width - iconInset - iconFrame)
+                }
+                .mask(alignment: .leading) {
+                    Capsule()
+                        .frame(width: thumbWidth, height: thumbHeight)
+                        .mask(alignment: .center) {
+                            RoundedRectangle(cornerRadius: thumbHeight / 2)
+                                .frame(width: clipWidth, height: thumbHeight)
+                                .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
+                                .animation(.easeOut(duration: 0.40), value: smoothProgress)
+                        }
+                        .scaleEffect(x: 1, y: bumpScale, anchor: .center)
+                        .offset(x: thumbX)
+                }
             }
             .frame(height: 36 * scale, alignment: .center)
             .contentShape(Capsule())
@@ -459,5 +546,5 @@ private struct PlayPauseButton: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(authManager: AuthManager(), purchaseManager: PurchaseManager())
 }

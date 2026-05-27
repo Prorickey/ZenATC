@@ -23,9 +23,7 @@ struct ZenATCApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environment(authManager)
-                .environment(purchaseManager)
+            ContentView(authManager: authManager, purchaseManager: purchaseManager)
         }
     }
 }
