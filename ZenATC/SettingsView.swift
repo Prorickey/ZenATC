@@ -11,7 +11,7 @@ struct SettingsView: View {
     let authManager: AuthManager
     let purchaseManager: PurchaseManager
     @Binding var showSettings: Bool
-    @State private var showUpgradeView = false
+    @Binding var showUpgrade: Bool
 
     private let settingsAccent = Color(red: 0.878, green: 0.298, blue: 0.149)
 
@@ -60,19 +60,13 @@ struct SettingsView: View {
                 .padding(.bottom, 30)
             }
         }
-        .sheet(isPresented: $showUpgradeView) {
-            UpgradeView(
-                authManager: authManager,
-                purchaseManager: purchaseManager,
-                showUpgrade: $showUpgradeView
-            )
-            .environment(themeManager)
-        }
     }
 
     private func handleUpgradeTap() {
         guard !purchaseManager.isPro else { return }
-        showUpgradeView = true
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+            showUpgrade = true
+        }
     }
 
     private var header: some View {
@@ -695,6 +689,7 @@ private struct MiniAppScreen: View {
 
 #Preview {
     @Previewable @State var show = true
-    SettingsView(authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show)
+    @Previewable @State var showUpgrade = false
+    SettingsView(authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show, showUpgrade: $showUpgrade)
         .environment(ThemeManager())
 }

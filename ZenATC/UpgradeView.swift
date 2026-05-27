@@ -13,7 +13,7 @@ struct UpgradeView: View {
     @Binding var showUpgrade: Bool
 
     @State private var selectedPlan = 1 // 0 = monthly, 1 = annual
-    @State private var showUpgradeFlow = false
+    @State private var showAuthPage = false
 
     private let accent = Color(red: 0.878, green: 0.298, blue: 0.149)
     private let bestValueGreen = Color(red: 0.694, green: 0.847, blue: 0.725)
@@ -28,33 +28,43 @@ struct UpgradeView: View {
         ZStack {
             themeManager.theme.background.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                header
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    mainPage
+                        .frame(width: geo.size.width)
 
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        perksSection
-                            .padding(.top, 32)
-
-                        plansSection
-                            .padding(.top, 36)
-
-                        upgradeButton
-                            .padding(.top, 32)
-
-                        finePrint
-                            .padding(.top, 16)
-                    }
-                    .padding(.bottom, 48)
+                    authPage
+                        .frame(width: geo.size.width)
                 }
+                .frame(width: geo.size.width * 2, alignment: .leading)
+                .offset(x: showAuthPage ? -geo.size.width : 0)
+                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAuthPage)
             }
         }
-        .sheet(isPresented: $showUpgradeFlow) {
-            UpgradeFlowSheet(
-                authManager: authManager,
-                purchaseManager: purchaseManager,
-                preselectedPlanIndex: selectedPlan
-            )
+    }
+
+    // MARK: - Main Page
+
+    private var mainPage: some View {
+        VStack(spacing: 0) {
+            header
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    perksSection
+                        .padding(.top, 32)
+
+                    plansSection
+                        .padding(.top, 36)
+
+                    upgradeButton
+                        .padding(.top, 32)
+
+                    finePrint
+                        .padding(.top, 16)
+                }
+                .padding(.bottom, 48)
+            }
         }
     }
 
@@ -192,7 +202,9 @@ struct UpgradeView: View {
 
     private var upgradeButton: some View {
         Button {
-            showUpgradeFlow = true
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                showAuthPage = true
+            }
         } label: {
             Text("Upgrade now")
                 .font(.system(size: 20, weight: .bold))
@@ -232,135 +244,273 @@ struct UpgradeView: View {
         .padding(.horizontal, 19)
         .buttonStyle(.plain)
     }
+
+    // MARK: - Auth Page
+
+    private var authPage: some View {
+        AuthFlowPage(
+            themeManager: themeManager,
+            authManager: authManager,
+            purchaseManager: purchaseManager,
+            preselectedPlanIndex: selectedPlan,
+            onBack: {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                    showAuthPage = false
+                }
+            },
+            onDone: { showUpgrade = false }
+        )
+    }
 }
 
-// MARK: - Upgrade Flow Sheet
+// MARK: - Auth Flow Page
 
-private struct UpgradeFlowSheet: View {
+private struct AuthFlowPage: View {
+    let themeManager: ThemeManager
     let authManager: AuthManager
     let purchaseManager: PurchaseManager
     var preselectedPlanIndex: Int = 1
-
-    @Environment(\.dismiss) private var dismiss
+    let onBack: () -> Void
+    let onDone: () -> Void
 
     @State private var email = ""
     @State private var password = ""
     @State private var errorMessage: String?
     @State private var isLoading = false
 
+    private let accent = Color(red: 0.878, green: 0.298, blue: 0.149)
+
+    private var bg: Color { themeManager.theme.background }
+    private var fg: Color { themeManager.theme.foreground }
+
     private var selectedProduct: Product? {
         let idx = preselectedPlanIndex < purchaseManager.products.count
-            ? preselectedPlanIndex
-            : 0
+            ? preselectedPlanIndex : 0
         return purchaseManager.products.isEmpty ? nil : purchaseManager.products[idx]
     }
 
     var body: some View {
-        NavigationStack {
-            Form {
-                if !authManager.isSignedIn {
-                    signInSection
-                } else if !purchaseManager.isPro {
-                    accountSection
-                    plansSection
-                } else {
-                    proSection
-                }
+        VStack(spacing: 0) {
+            authHeader
+
+            if !authManager.isSignedIn {
+                signInContent
+            } else if !purchaseManager.isPro {
+                confirmContent
+            } else {
+                proContent
             }
-            .navigationTitle("ZenATC Pro")
-            .navigationBarTitleDisplayMode(.inline)
+
+            Spacer()
         }
-        .presentationDetents([.medium])
-        .onChange(of: authManager.isSignedIn) {
-            if authManager.isSignedIn && purchaseManager.isPro {
-                dismiss()
-            }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(bg.ignoresSafeArea())
+        .onChange(of: purchaseManager.isPro) {
+            if purchaseManager.isPro { onDone() }
         }
     }
 
-    private var signInSection: some View {
-        Section {
-            TextField("Email", text: $email)
+    // MARK: - Auth Header
+
+    private var authHeader: some View {
+        HStack(alignment: .center) {
+            Button(action: onBack) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Back")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundStyle(accent)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button {
+                onDone()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .frame(width: 42.24, height: 42.24)
+                    .background(accent.opacity(0.12))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 20)
+        .padding(.bottom, 28)
+    }
+
+    // MARK: - Sign In
+
+    private var signInContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Log In")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(accent)
+
+            Text("Sign in or create a new account")
+                .font(.system(size: 14))
+                .foregroundStyle(accent.opacity(0.6))
+                .padding(.top, 4)
+                .padding(.bottom, 28)
+
+            themedField("Email", text: $email)
                 .textContentType(.emailAddress)
                 .keyboardType(.emailAddress)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
 
-            SecureField("Password", text: $password)
+            themedSecureField("Password", text: $password)
+                .padding(.top, 12)
                 .textContentType(.password)
 
             if let error = errorMessage {
-                Text(error).foregroundStyle(.red).font(.caption)
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.top, 8)
             }
+
+            actionButton("Log In", disabled: isLoading || email.isEmpty || password.isEmpty) {
+                Task { await logIn() }
+            }
+            .padding(.top, 24)
+        }
+    }
+
+    // MARK: - Confirm Purchase
+
+    private var confirmContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Confirm Plan")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(accent)
+                .padding(.bottom, 4)
+
+            Text(authManager.userEmail ?? "")
+                .font(.system(size: 14))
+                .foregroundStyle(accent.opacity(0.6))
+                .padding(.bottom, 28)
+
+            if let product = selectedProduct {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(product.displayName)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(accent)
+                        Text(product.displayPrice)
+                            .font(.system(size: 14))
+                            .foregroundStyle(accent.opacity(0.6))
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(accent.opacity(0.08))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(accent.opacity(0.2), lineWidth: 1))
+                )
+                .padding(.bottom, 24)
+
+                if let error = errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.bottom, 8)
+                }
+
+                actionButton("Purchase", disabled: isLoading) {
+                    Task { await purchase(product) }
+                }
+            }
+        }
+    }
+
+    // MARK: - Pro
+
+    private var proContent: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 52))
+                .foregroundStyle(accent)
+                .padding(.bottom, 4)
+
+            Text("You're Pro")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(accent)
+
+            Text(authManager.userEmail ?? "")
+                .font(.system(size: 14))
+                .foregroundStyle(accent.opacity(0.6))
 
             Button {
-                Task { await logIn() }
-            } label: {
-                label("Log In")
-            }
-            .disabled(isLoading || email.isEmpty || password.isEmpty)
-        } header: {
-            Text("Log in to upgrade")
-        }
-    }
-
-    private var accountSection: some View {
-        Section {
-            Text(authManager.userEmail ?? "").foregroundStyle(.secondary)
-        } header: {
-            Text("Signed in as")
-        }
-    }
-
-    private var plansSection: some View {
-        Section {
-            if let product = selectedProduct {
-                Button {
-                    Task { await purchase(product) }
-                } label: {
-                    HStack {
-                        Text(product.displayName)
-                        Spacer()
-                        Text(product.displayPrice + " / mo").foregroundStyle(.secondary)
-                    }
-                }
-                .disabled(isLoading)
-            }
-
-            if let error = errorMessage {
-                Text(error).foregroundStyle(.red).font(.caption)
-            }
-        } header: {
-            Text("Confirm plan")
-        }
-    }
-
-    private var proSection: some View {
-        Section {
-            HStack {
-                Text("Status")
-                Spacer()
-                Text("Pro ✓").foregroundStyle(.secondary)
-            }
-            Text(authManager.userEmail ?? "").foregroundStyle(.secondary)
-            Button(role: .destructive) {
                 try? authManager.signOut()
+                onDone()
             } label: {
                 Text("Sign Out")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(accent.opacity(0.55))
             }
-        } header: {
-            Text("Account")
+            .buttonStyle(.plain)
+            .padding(.top, 8)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 16)
     }
 
-    private func label(_ title: String) -> some View {
-        Group {
-            if isLoading {
-                ProgressView().frame(maxWidth: .infinity)
-            } else {
-                Text(title).frame(maxWidth: .infinity)
+    // MARK: - Helpers
+
+    private func themedField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .font(.system(size: 16))
+            .foregroundStyle(fg)
+            .tint(accent)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(fg.opacity(0.08))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(fg.opacity(0.2), lineWidth: 1))
+            )
+    }
+
+    private func themedSecureField(_ placeholder: String, text: Binding<String>) -> some View {
+        SecureField(placeholder, text: text)
+            .font(.system(size: 16))
+            .foregroundStyle(fg)
+            .tint(accent)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(fg.opacity(0.08))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(fg.opacity(0.2), lineWidth: 1))
+            )
+    }
+
+    private func actionButton(_ title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if isLoading {
+                    ProgressView().tint(bg)
+                } else {
+                    Text(title)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(bg)
+                }
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
+            .background(disabled ? accent.opacity(0.35) : accent)
+            .clipShape(Capsule())
         }
+        .buttonStyle(.plain)
+        .disabled(disabled)
     }
 
     private func logIn() async {
@@ -371,7 +521,7 @@ private struct UpgradeFlowSheet: View {
             try await authManager.signIn(email: email, password: password)
         } catch {
             let code = (error as NSError).code
-            // 17011 = userNotFound — account doesn't exist yet, create it
+            // 17011 = userNotFound — create the account instead
             if code == 17011 {
                 do {
                     try await authManager.createAccount(email: email, password: password)

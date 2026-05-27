@@ -6,12 +6,13 @@
 import SwiftUI
 
 struct ContentView: View {
-    @Environment(AuthManager.self) private var authManager
-    @Environment(PurchaseManager.self) private var purchaseManager
+    let authManager: AuthManager
+    let purchaseManager: PurchaseManager
     @State private var audio = AudioManager()
     @State private var themeManager = ThemeManager()
     @State private var showTrackPicker = false
     @State private var showSettings = false
+    @State private var showUpgrade = false
     @State private var showAirports = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
@@ -50,9 +51,22 @@ struct ContentView: View {
             }
 
             if showSettings {
-                SettingsView(authManager: authManager, purchaseManager: purchaseManager, showSettings: $showSettings)
-                    .transition(.move(edge: .top))
-                    .zIndex(1)
+                SettingsView(
+                    authManager: authManager,
+                    purchaseManager: purchaseManager,
+                    showSettings: $showSettings,
+                    showUpgrade: $showUpgrade
+                )
+                .transition(.move(edge: .bottom))
+            }
+
+            if showUpgrade {
+                UpgradeView(
+                    authManager: authManager,
+                    purchaseManager: purchaseManager,
+                    showUpgrade: $showUpgrade
+                )
+                .transition(.move(edge: .bottom))
             }
 
             if showAirports {
@@ -68,6 +82,7 @@ struct ContentView: View {
             }
         }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
+        .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showUpgrade)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirports)
         .animation(.easeInOut(duration: 0.6), value: hasCompletedOnboarding)
         .environment(themeManager)
@@ -459,5 +474,5 @@ private struct PlayPauseButton: View {
 }
 
 #Preview {
-    ContentView()
+    ContentView(authManager: AuthManager(), purchaseManager: PurchaseManager())
 }
