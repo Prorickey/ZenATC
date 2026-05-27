@@ -132,7 +132,10 @@ final class AudioManager {
         do {
             return try await attestationManager.requestStreamURL(for: filename)
         } catch {
-            // Simulator / CDN not yet configured — fall back to direct backend URL.
+            // App Attest unsupported (Simulator) — bypass Worker and hit origin directly.
+            // On a real device this path should never be reached; if it is, the error
+            // will surface as a silent playback failure since the Worker blocks unsigned URLs.
+            print("[AudioManager] attestation error, using direct URL: \(error)")
             return backendBaseURL.appendingPathComponent("hls/\(filename)/index.m3u8")
         }
     }

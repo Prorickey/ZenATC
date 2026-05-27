@@ -55,7 +55,7 @@ func initVerification() {
 	// Allow override for multi-tenant or staging builds; default to this app.
 	appID := os.Getenv("APPLE_APP_ID")
 	if appID == "" {
-		appID = "PS96HNX5KD.tech.bedson.ZenATC"
+		appID = "LXTD6ZNS5L.tech.bedson.ZenATC"
 	}
 	appleAppID = appID
 	log.Printf("[attest] App ID: %s", appleAppID)
