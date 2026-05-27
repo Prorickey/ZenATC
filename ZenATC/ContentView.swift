@@ -3,6 +3,7 @@
 //  ZenATC
 //
 
+import AVFoundation
 import SwiftUI
 
 struct ContentView: View {
@@ -14,6 +15,7 @@ struct ContentView: View {
     @State private var showUpgrade = false
     @State private var showAirports = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
+    @State private var showSplash = true
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
@@ -84,8 +86,22 @@ struct ContentView: View {
                     .transition(.opacity)
                     .zIndex(10)
             }
+
+            if showSplash {
+                SplashOverlay()
+                    .transition(.opacity)
+                    .zIndex(20)
+            }
         }
-        .onAppear { hasCompletedOnboarding = false }
+        .task {
+            await audio.preload()
+        }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                showSplash = false
+            }
+        }
+        .animation(.easeInOut(duration: 0.75), value: showSplash)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showUpgrade)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirports)
@@ -543,6 +559,63 @@ private struct PlayPauseButton: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: isPlaying)
+    }
+}
+
+// MARK: - Splash Overlay
+
+private struct SplashOverlay: View {
+    @Environment(ThemeManager.self) private var themeManager
+    @State private var planeProgress: CGFloat = 0
+    @State private var sfxPlayer: AVAudioPlayer?
+
+    var body: some View {
+        GeometryReader { geo in
+            let planeY  = geo.size.height * 0.70
+            let startX: CGFloat = -44
+            let endX: CGFloat   = geo.size.width + 44
+            let currentX  = startX + (endX - startX) * planeProgress
+            let trailWidth = max(0, min(currentX, geo.size.width))
+
+            ZStack {
+                themeManager.theme.background.ignoresSafeArea()
+
+                Text("lofi atc")
+                    .font(.gtStandardAirport(size: 88))
+                    .foregroundStyle(themeManager.theme.foreground)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+
+                if trailWidth > 0 {
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [themeManager.theme.foreground.opacity(0), themeManager.theme.foreground],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: trailWidth, height: 2)
+                        .position(x: trailWidth / 2, y: planeY)
+                }
+
+                Image(systemName: "airplane")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(themeManager.theme.foreground)
+                    .position(x: currentX, y: planeY)
+            }
+        }
+        .onAppear {
+            playSFX()
+            withAnimation(.linear(duration: 1.2).delay(0.2)) {
+                planeProgress = 1.0
+            }
+        }
+    }
+
+    private func playSFX() {
+        guard let url = Bundle.main.url(forResource: "plane_flyby", withExtension: "mp3") else { return }
+        sfxPlayer = try? AVAudioPlayer(contentsOf: url)
+        sfxPlayer?.play()
     }
 }
 
