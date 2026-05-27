@@ -28,23 +28,42 @@ ZenATC mixes live ATC (Air Traffic Control) radio audio with lofi music so users
 - **`ThemeManager`** — holds the active `AppTheme` (background + foreground color pair). Passed via `.environment(themeManager)` and consumed with `@Environment(ThemeManager.self)`. Never passed as a parameter.
 - **`AuthManager`** — thin Firebase Auth wrapper. `isSignedIn` / `userEmail` derived from `user: User?`.
 - **`PurchaseManager`** — StoreKit 2. Checks `Transaction.currentEntitlements` to set `isPro`. Subscribes to `Transaction.updates` for renewals/refunds.
+- **`VolumeMonitor`** (in `VolumeTooLowView.swift`) — wraps `AVAudioSession.outputVolume` via KVO. Updates `volume` on the main actor whenever system media volume changes.
 
 ### View hierarchy (ContentView.swift)
 
 ```
 ContentView
 ├── TopBarView         — LIVE indicator, theme cycler, settings/airports buttons
-├── AirportCarouselView — TabView paging through airports; vertical drag stretches the big letter
+├── AirportCarouselView — TabView paging through airports; receives a derived `dragY` from showTrackPicker
 │   └── AirportPageView — one airport code letter scaled to fill container (ABCGravity font)
 ├── BottomControlsView
 │   ├── MixerSliderView       — ATC/lofi balance pill-slider
 │   ├── PlayPauseButton       — large circle play/pause
-│   └── InlineTrackPicker     — custom drag-gesture wheel picker (shown/hidden via showTrackPicker)
-├── SettingsView    (overlay, offset-animated)
-├── UpgradeView     (overlay, .move transition)
-├── AirportsListView (overlay, .move transition)
-└── OnboardingView  (overlay, zIndex 10) — currently disabled via hardcoded onAppear
+│   └── InlineTrackPicker     — custom drag-gesture wheel picker (rotated so selected is row 0)
+├── SettingsView      (overlay, offset-animated)
+├── UpgradeView       (overlay, .move transition)
+├── AirportsListView  (overlay, .move transition)
+├── OnboardingView    (overlay, zIndex 10) — currently disabled via hardcoded onAppear
+└── VolumeTooLowView  (overlay, zIndex 20) — shows when system volume == 0; user can "Continue anyway"
 ```
+
+### Picker animation contract (important)
+
+`showTrackPicker` is the **single source of truth** for the entire selected ↔ swiped-up transition. Both the airport letter's compression (`dragY = showTrackPicker ? -200 : 0`, passed as a `let` into `AirportCarouselView`) and the slider/play offset key off this one Bool. Every code path that toggles it must use the unified spring `spring(response: 0.55, dampingFraction: 0.85)` (also stored as `BottomControlsView.pickerSpring`) so the letter and the bottom controls animate as one. Do not introduce a separate `@State` for the letter's compression; derive it from `showTrackPicker`.
+
+### Gesture coordination
+
+- `isSliderActive` (`@State` on ContentView, `@Binding` into `MixerSliderView`) gates the outer drag gesture — while the user is holding the pill, vertical drags won't open/close the picker.
+- Vertical-vs-horizontal disambiguation: both the outer ContentView gesture and `AirportCarouselView`'s simultaneousGesture early-return when `|dx| ≥ |dy|` so horizontal TabView swipes don't trigger picker open/close.
+- `MixerSliderView`'s `onChanged` ignores `|translation.width| < 5` so a tap on a new track spot doesn't cancel the in-flight spring animation from a previous tap.
+
+### Haptics
+
+- Light impact on `showTrackPicker` toggle (swipe up/down).
+- Medium impact on `audio.currentAirportIndex` change.
+- Selection haptic on `Int(balance * 20)` — ~21 quantized clicks as the slider pill drags.
+- Selection haptic on `InlineTrackPicker.selectedIndex` via its own `.sensoryFeedback`.
 
 ### Data models (Models.swift)
 

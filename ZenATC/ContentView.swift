@@ -15,7 +15,6 @@ struct ContentView: View {
     @State private var showUpgrade = false
     @State private var showAirports = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = true
-    @State private var textDragY: CGFloat = 0
     @State private var isSliderActive = false
     @State private var volumeMonitor = VolumeMonitor()
     @State private var volumeOverlaySnoozed = false
@@ -40,9 +39,13 @@ struct ContentView: View {
                 AirportCarouselView(
                     airports: airports,
                     currentIndex: $audio.currentAirportIndex,
-                    dragY: $textDragY,
+                    dragY: showTrackPicker ? -200 : 0,
                     showTrackPicker: showTrackPicker,
-                    onOpen: { showTrackPicker = true }
+                    onOpen: {
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
+                            showTrackPicker = true
+                        }
+                    }
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding(.horizontal, 12)
@@ -115,24 +118,16 @@ struct ContentView: View {
                     guard abs(dy) > abs(dx) else { return }
                     let predicted = value.predictedEndTranslation.height
                     if showTrackPicker, dy > 60 {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
                             showTrackPicker = false
                         }
                     } else if !showTrackPicker, dy < -40 || predicted < -80 {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                        withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
                             showTrackPicker = true
-                            textDragY = -113
                         }
                     }
                 }
         )
-        .onChange(of: showTrackPicker) { _, open in
-            if !open {
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                    textDragY = 0
-                }
-            }
-        }
         .onChange(of: volumeMonitor.volume) { _, newVolume in
             if newVolume > 0 {
                 volumeOverlaySnoozed = false
@@ -144,6 +139,8 @@ struct ContentView: View {
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showUpgrade)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirports)
         .animation(.easeInOut(duration: 0.6), value: hasCompletedOnboarding)
+        .sensoryFeedback(.impact(weight: .light), trigger: showTrackPicker)
+        .sensoryFeedback(.impact(weight: .medium), trigger: audio.currentAirportIndex)
         .environment(themeManager)
     }
 }
@@ -350,32 +347,60 @@ private struct RightIconsView: View {
 private struct AirportCarouselView: View {
     let airports: [Airport]
     @Binding var currentIndex: Int
-    @Binding var dragY: CGFloat
+    let dragY: CGFloat
     let showTrackPicker: Bool
     let onOpen: () -> Void
 
+    @State private var slideDirection: Int = 1
+
+    private static let flickSpring: Animation = .spring(response: 0.3, dampingFraction: 0.7)
+    private let flickThreshold: CGFloat = 40
+    private let flickPredictedThreshold: CGFloat = 180
+
     var body: some View {
-        TabView(selection: $currentIndex) {
-            ForEach(airports.indices, id: \.self) { index in
-                AirportPageView(airport: airports[index], dragY: showTrackPicker ? -200 : dragY)
-                    .tag(index)
-            }
+        ZStack {
+            AirportPageView(airport: airports[currentIndex], dragY: dragY)
+                .id(currentIndex)
+                .transition(
+                    .asymmetric(
+                        insertion: .move(edge: slideDirection > 0 ? .trailing : .leading),
+                        removal: .move(edge: slideDirection > 0 ? .leading : .trailing)
+                    )
+                )
         }
-        .tabViewStyle(.page(indexDisplayMode: .never))
-        .allowsHitTesting(true)
+        .contentShape(Rectangle())
+        .clipped()
         .simultaneousGesture(
-            DragGesture(minimumDistance: 8)
+            DragGesture(minimumDistance: 12)
                 .onEnded { value in
                     guard !showTrackPicker else { return }
                     let dx = value.translation.width
                     let dy = value.translation.height
-                    guard abs(dy) > abs(dx) else { return }
-                    let predicted = value.predictedEndTranslation.height
-                    if dy < -40 || predicted < -80 {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                            dragY = -200
+
+                    if abs(dy) > abs(dx) {
+                        let predicted = value.predictedEndTranslation.height
+                        if dy < -40 || predicted < -80 {
+                            onOpen()
                         }
-                        onOpen()
+                        return
+                    }
+
+                    let predictedDx = value.predictedEndTranslation.width
+
+                    if dx < -flickThreshold || predictedDx < -flickPredictedThreshold {
+                        if currentIndex < airports.count - 1 {
+                            slideDirection = 1
+                            withAnimation(Self.flickSpring) {
+                                currentIndex += 1
+                            }
+                        }
+                    } else if dx > flickThreshold || predictedDx > flickPredictedThreshold {
+                        if currentIndex > 0 {
+                            slideDirection = -1
+                            withAnimation(Self.flickSpring) {
+                                currentIndex -= 1
+                            }
+                        }
                     }
                 }
         )
@@ -391,7 +416,8 @@ private struct AirportPageView: View {
 
     // ── Tune default letter size here ──────────────────────────────────────
     private let defaultWidthFraction: CGFloat  = 0.98   // fraction of container width
-    private let defaultHeightFraction: CGFloat = 0.95    // fraction of container height
+    private let defaultHeightFraction: CGFloat = 0.96
+    // fraction of container height
     // ───────────────────────────────────────────────────────────────────────
 
     private let referenceCapHeight: CGFloat = UIFont.abcGravity(size: 200).capHeight
@@ -458,7 +484,12 @@ private struct BottomControlsView: View {
                     .padding(.top, 16)
             }
             .offset(y: showTrackPicker ? -80 : 25)
-            .animation(Self.pickerSpring, value: showTrackPicker)
+            .animation(
+                showTrackPicker
+                    ? Self.pickerSpring
+                    : Self.pickerSpring.delay(Self.fadeStagger + Self.fadeDuration * 0.5),
+                value: showTrackPicker
+            )
 
             ZStack {
                 InlineTrackPicker(
@@ -501,9 +532,9 @@ private struct BottomControlsView: View {
                 .allowsHitTesting(!showTrackPicker)
             }
             .padding(.top, 16)
-            .padding(.bottom, 36)
+            .padding(.bottom, 50)
         }
-        .padding(.top, 10)
+        .padding(.top, 20)
     }
 }
 
@@ -749,6 +780,7 @@ private struct MixerSliderView: View {
             .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
         }
         .frame(height: 36 * 1.5)
+        .sensoryFeedback(.selection, trigger: Int(balance * 20))
     }
 }
 

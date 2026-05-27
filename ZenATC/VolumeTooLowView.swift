@@ -39,11 +39,11 @@ struct VolumeTooLowView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                HStack(alignment: .top, spacing: 3) {
+                HStack(alignment: .center, spacing: 6) {
                     Image(systemName: "speaker.fill")
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.system(size: 32, weight: .semibold))
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 32, weight: .semibold))
                 }
                 .foregroundStyle(themeManager.theme.foreground)
                 .padding(.bottom, 14)
@@ -52,7 +52,7 @@ struct VolumeTooLowView: View {
                     .font(.abcGravity(size: 64))
                     .foregroundStyle(themeManager.theme.foreground)
                     .multilineTextAlignment(.center)
-                    .lineSpacing(-22)
+                    .lineSpacing(-30)
 
                 Text("This app is a listening app")
                     .font(.airportCode(size: 18))
