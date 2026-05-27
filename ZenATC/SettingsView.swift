@@ -8,8 +8,8 @@ import StoreKit
 
 struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
-    @Environment(AuthManager.self) private var authManager
-    @Environment(PurchaseManager.self) private var purchaseManager
+    let authManager: AuthManager
+    let purchaseManager: PurchaseManager
     @Binding var showSettings: Bool
     @State private var showAuthSheet = false
 
@@ -845,6 +845,6 @@ private struct UpgradeFlowSheet: View {
 
 #Preview {
     @Previewable @State var show = true
-    SettingsView(showSettings: $show)
+    SettingsView(authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show)
         .environment(ThemeManager())
 }

@@ -6,6 +6,8 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(AuthManager.self) private var authManager
+    @Environment(PurchaseManager.self) private var purchaseManager
     @State private var audio = AudioManager()
     @State private var themeManager = ThemeManager()
     @State private var showTrackPicker = false
@@ -46,7 +48,7 @@ struct ContentView: View {
             }
 
             if showSettings {
-                SettingsView(showSettings: $showSettings)
+                SettingsView(authManager: authManager, purchaseManager: purchaseManager, showSettings: $showSettings)
                     .transition(.move(edge: .top))
                     .zIndex(1)
             }
