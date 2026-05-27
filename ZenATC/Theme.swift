@@ -82,6 +82,11 @@ extension UIFont {
         UIFont(name: "GTStandardTrialVF-LCompressedBlack", size: size)
             ?? UIFont.systemFont(ofSize: size, weight: .black)
     }
+
+    static func schengenCore(size: CGFloat) -> UIFont {
+        UIFont(name: "ABCSchengenCoreVariable-Trial", size: size)
+            ?? UIFont.systemFont(ofSize: size, weight: .bold)
+    }
 }
 
 extension Font {
@@ -95,5 +100,9 @@ extension Font {
 
     static func schengenCore(size: CGFloat) -> Font {
         Font.custom("ABCSchengenCoreVariable-Trial", size: size)
+    }
+
+    static func airportCode(size: CGFloat) -> Font {
+        Font(UIFont.schengenCore(size: size))
     }
 }

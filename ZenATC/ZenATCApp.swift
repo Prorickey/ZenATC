@@ -30,19 +30,30 @@ struct ZenATCApp: App {
 
 enum FontLoader {
     static func registerAll() {
-        load("ABCSchengenCoreVariable-Trial")
-        load("GT-Standard-Trial-VF")
+        registerFont(assetName: "ABCSchengenCoreVariable-Trial", fileName: "ABCSchengenCoreVariable-Trial")
+        registerFont(assetName: "GT-Standard-Trial-VF", fileName: "GT-Standard-Trial-VF")
     }
 
-    private static func load(_ assetName: String) {
-        guard let asset = NSDataAsset(name: assetName),
-              let provider = CGDataProvider(data: asset.data as CFData),
+    private static func registerFont(assetName: String, fileName: String) {
+        if let asset = NSDataAsset(name: assetName),
+           let provider = CGDataProvider(data: asset.data as CFData),
+           let font = CGFont(provider) {
+            CTFontManagerRegisterGraphicsFont(font, nil)
+            #if DEBUG
+            print("[Font] Registered asset: \(font.postScriptName as String? ?? "unknown")")
+            #endif
+            return
+        }
+
+        guard let url = Bundle.main.url(forResource: fileName, withExtension: "ttf", subdirectory: "Fonts"),
+              let provider = CGDataProvider(url: url as CFURL),
               let font = CGFont(provider) else {
             return
         }
+
         CTFontManagerRegisterGraphicsFont(font, nil)
         #if DEBUG
-        print("[Font] Registered: \(font.postScriptName as String? ?? "unknown")")
+        print("[Font] Registered bundle: \(font.postScriptName as String? ?? "unknown")")
         #endif
     }
 }

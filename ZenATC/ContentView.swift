@@ -203,7 +203,7 @@ private struct AirportPageView: View {
     @Environment(ThemeManager.self) private var themeManager
     @State private var naturalTextWidth: CGFloat = 0
 
-    private let referenceCapHeight: CGFloat = UIFont.gtStandardAirport(size: 200).capHeight
+    private let referenceCapHeight: CGFloat = UIFont.schengenCore(size: 200).capHeight
 
     var body: some View {
         GeometryReader { geo in
@@ -211,7 +211,7 @@ private struct AirportPageView: View {
             let scaleY = referenceCapHeight > 0 ? geo.size.height / referenceCapHeight - 0.15 : 1
 
             Text(airport.code.uppercased())
-                .font(.gtStandardAirport(size: 200))
+                .font(.airportCode(size: 200))
                 .kerning(0)
                 .lineLimit(1)
                 .fixedSize()
@@ -271,7 +271,7 @@ private struct BottomControlsView: View {
                     }
                 } label: {
                     Text(tracks[selectedTrackIndex].name)
-                        .font(.system(size: 34.77, weight: .semibold))
+                        .font(.gtStandard(size: 34.77))
                         .kerning(0)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(themeManager.theme.foreground)
@@ -325,7 +325,7 @@ private struct InlineTrackPicker: View {
                     let isSelected = i == selectedIndex
 
                     Text(tracks[i].name)
-                        .font(.system(size: isSelected ? 34.77 : size, weight: dist < 0.5 ? .semibold : .regular))
+                        .font(.gtStandard(size: isSelected ? 34.77 : size))
                         .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)

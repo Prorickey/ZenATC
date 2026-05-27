@@ -31,7 +31,7 @@ struct OnboardingView: View {
                 }
                 .transition(.asymmetric(
                     insertion: .move(edge: .trailing),
-                    removal:   .move(edge: .leading)
+                    removal: .move(edge: .leading)
                 ))
             } else if step == 2 {
                 NumberStep(
@@ -45,7 +45,7 @@ struct OnboardingView: View {
                 }
                 .transition(.asymmetric(
                     insertion: .move(edge: .trailing),
-                    removal:   .move(edge: .leading)
+                    removal: .move(edge: .leading)
                 ))
             } else if step == 3 {
                 NumberStep(
@@ -58,11 +58,10 @@ struct OnboardingView: View {
                 }
                 .transition(.asymmetric(
                     insertion: .move(edge: .trailing),
-                    removal:   .move(edge: .leading)
+                    removal: .move(edge: .leading)
                 ))
             }
 
-            // Splash sits on top and fades away on its own timeline
             if showSplash {
                 SplashStep()
                     .transition(.opacity)
@@ -98,7 +97,7 @@ private struct SplashStep: View {
 
                 // "lofi atc" label — sits just above the flight path
                 Text("lofi atc")
-                    .font(.gtStandardAirport(size: 88))
+                    .font(.airportCode(size: 88))
                     .foregroundStyle(themeManager.theme.foreground)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
 
@@ -154,7 +153,7 @@ private struct NumberStep: View {
             Spacer().frame(height: 28)
 
             Text(number)
-                .font(.gtStandardAirport(size: 400))
+                .font(.airportCode(size: 400))
                 .lineLimit(1)
                 .foregroundStyle(themeManager.theme.foreground)
                 .frame(maxWidth: .infinity, alignment: .center)

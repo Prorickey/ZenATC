@@ -214,7 +214,7 @@ struct SettingsView: View {
     private var airportCard: some View {
         VStack(spacing: 8) {
             Text("50")
-                .font(.gtStandardAirport(size: 100))
+                .font(.airportCode(size: 100))
                 .fontWeight(.semibold)
                 .foregroundStyle(themeManager.theme.foreground)
 
@@ -544,7 +544,7 @@ private struct AirportCard: View {
                 )
 
             Text(code)
-                .font(.gtStandardAirport(size: 56))
+                .font(.airportCode(size: 56))
                 .foregroundStyle(colors.0)
         }
         .frame(width: 120, height: 170)
@@ -688,7 +688,7 @@ private struct MiniAppScreen: View {
                 // Airport code
                 Spacer()
                 Text(airportCode)
-                    .font(.gtStandardAirport(size: 90))
+                    .font(.airportCode(size: 90))
                     .foregroundStyle(theme.foreground)
                     .lineLimit(1)
                     .minimumScaleFactor(0.4)
