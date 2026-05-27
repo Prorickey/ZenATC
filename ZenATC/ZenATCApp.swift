@@ -6,18 +6,26 @@
 import SwiftUI
 import CoreGraphics
 import CoreText
+import FirebaseCore
 
 @main
 struct ZenATCApp: App {
+    @State private var authManager: AuthManager
+    @State private var purchaseManager: PurchaseManager
+
     init() {
+        FirebaseApp.configure()
+        _authManager = State(wrappedValue: AuthManager())
+        _purchaseManager = State(wrappedValue: PurchaseManager())
         FontLoader.registerAll()
-        // Make wheel pickers transparent so they sit on the app's background naturally.
         UIPickerView.appearance().backgroundColor = .clear
     }
 
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(authManager)
+                .environment(purchaseManager)
         }
     }
 }

@@ -1,0 +1,69 @@
+{
+  "identifier" : "4A1F2B3C-D4E5-6F7A-8B9C-0D1E2F3A4B5C",
+  "nonConsumableProducts" : [],
+  "nonRenewingSubscriptionProducts" : [],
+  "products" : [],
+  "settings" : {
+    "_applicationInternalID" : "",
+    "_developerTeamID" : "",
+    "_lastSynchronizedDate" : null,
+    "_locale" : "en_US",
+    "_storefront" : "USA",
+    "_storeKitVersion" : "2"
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "5B2C3D4E-F5A6-7B8C-9D0E-1F2A3B4C5D6E",
+      "localizations" : [],
+      "name" : "Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "4.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6C3D4E5F-A6B7-8C9D-0E1F-2A3B4C5D6E7F",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "ZenATC Pro, billed monthly",
+              "displayName" : "Pro Monthly",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.zenatc.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly",
+          "subscriptionGroupID" : "5B2C3D4E-F5A6-7B8C-9D0E-1F2A3B4C5D6E",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [],
+          "codeOffers" : [],
+          "displayPrice" : "29.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "7D4E5F6A-B7C8-9D0E-1F2A-3B4C5D6E7F8A",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "ZenATC Pro, billed annually",
+              "displayName" : "Pro Annual",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.zenatc.pro.annual",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro Annual",
+          "subscriptionGroupID" : "5B2C3D4E-F5A6-7B8C-9D0E-1F2A3B4C5D6E",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 3,
+    "minor" : 0
+  }
+}

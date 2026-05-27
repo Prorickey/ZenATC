@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var audio = AudioManager()
     @State private var themeManager = ThemeManager()
     @State private var showTrackPicker = false
+    @State private var showAccountSheet = false
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
@@ -20,7 +21,7 @@ struct ContentView: View {
             themeManager.theme.background.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                TopBarView()
+                TopBarView(showAccountSheet: $showAccountSheet)
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -45,12 +46,16 @@ struct ContentView: View {
             }
         }
         .environment(themeManager)
+        .sheet(isPresented: $showAccountSheet) {
+            AccountSheet()
+        }
     }
 }
 
 // MARK: - Top Bar
 
 private struct TopBarView: View {
+    @Binding var showAccountSheet: Bool
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
@@ -64,7 +69,7 @@ private struct TopBarView: View {
 
             Spacer()
 
-            RightIconsView()
+            RightIconsView(showAccountSheet: $showAccountSheet)
         }
     }
 }
@@ -98,12 +103,18 @@ private struct LiveIndicatorView: View {
 // MARK: - Right Icons
 
 private struct RightIconsView: View {
+    @Binding var showAccountSheet: Bool
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
         HStack(spacing: 24) {
             Image(systemName: "bell.fill")
-            Image(systemName: "person.crop.circle.fill")
+
+            Button {
+                showAccountSheet = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+            }
 
             Button {
                 withAnimation(.easeInOut(duration: 0.3)) {
