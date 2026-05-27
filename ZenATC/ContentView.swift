@@ -311,18 +311,19 @@ private struct MixerSliderView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let trackHeight: CGFloat = isDragging ? 36 : 29
-            let thumbWidth: CGFloat = isDragging ? 66 : 62
-            let thumbHeight: CGFloat = isDragging ? 28 : 24
-            let trackInset: CGFloat = 2
-            let iconInset: CGFloat = 14
-            let iconFrame: CGFloat = 20
+            let scale: CGFloat = 1.5
+            let trackHeight: CGFloat = (isDragging ? 36 : 29) * scale
+            let thumbWidth: CGFloat = (isDragging ? 66 : 62) * scale
+            let thumbHeight: CGFloat = (isDragging ? 28 : 24) * scale
+            let trackInset: CGFloat = 2 * scale
+            let iconInset: CGFloat = 14 * scale
+            let iconFrame: CGFloat = 20 * scale
 
             let usableRange = max(geo.size.width - (trackInset * 2) - thumbWidth, 1)
             let baseThumbLeft = trackInset + CGFloat(balance) * usableRange
             let baseThumbRight = baseThumbLeft + thumbWidth
             let endClipWidth = iconInset + iconFrame
-            let endZone: CGFloat = 10
+            let endZone: CGFloat = 10 * scale
             let leftDistance = max(baseThumbLeft - trackInset, 0)
             let rightDistance = max((geo.size.width - trackInset) - baseThumbRight, 0)
             let leftProgress = max(0, min((endZone - leftDistance) / endZone, 1))
@@ -358,19 +359,20 @@ private struct MixerSliderView: View {
                     .offset(x: thumbX)
 
                 Image(systemName: "headphones")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(leftCovered ? themeManager.theme.background : themeManager.theme.foreground)
                     .frame(width: iconFrame)
                     .offset(x: iconInset)
 
                 Image(systemName: "airplane")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 18, weight: .medium))
                     .foregroundStyle(rightCovered ? themeManager.theme.background : themeManager.theme.foreground)
                     .frame(width: iconFrame)
                     .offset(x: geo.size.width - iconInset - iconFrame)
             }
-            .frame(height: 36, alignment: .center)
+            .frame(height: 36 * scale, alignment: .center)
             .contentShape(Capsule())
+            .animation(.easeOut(duration: 0.40), value: smoothProgress)
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
@@ -394,7 +396,7 @@ private struct MixerSliderView: View {
             )
             .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
         }
-        .frame(height: 36)
+        .frame(height: 36 * 1.5)
     }
 
     private func valueFromLocation(_ x: CGFloat, width: CGFloat, inset: CGFloat, thumbWidth: CGFloat) -> Double {
