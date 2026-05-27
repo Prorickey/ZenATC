@@ -75,13 +75,13 @@ final class AudioManager {
 
     private func loadLofi() {
         let filename = tracks[selectedTrackIndex].filename
-        guard let url = URL(string: "\(backendBaseURL)/stream/\(filename)") else { return }
+        guard let url = URL(string: "\(backendBaseURL)/radio/\(filename)/index.m3u8") else { return }
         lofiPlayer = AVPlayer(url: url)
     }
 
     private func loadATC() {
         let filename = airports[currentAirportIndex].atcFilename
-        guard let url = URL(string: "\(backendBaseURL)/stream/\(filename)") else { return }
+        guard let url = URL(string: "\(backendBaseURL)/radio/\(filename)/index.m3u8") else { return }
         atcPlayer = AVPlayer(url: url)
     }
 

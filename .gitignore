@@ -12,6 +12,7 @@ build/
 # Go
 backend/zenatc-backend
 backend/zenatc
+backend/live/
 
 # macOS
 .DS_Store
