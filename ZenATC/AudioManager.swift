@@ -43,7 +43,12 @@ final class AudioManager {
     private let tracks = LofiTrack.all
     private let attestationManager = AttestationManager(backendBaseURL: backendBaseURL)
 
+    // ~30 segments × ~150KB each ≈ 4.5MB — enough for 2 min of 4s HLS segments
+    private static let segmentCacheCapacity = 5 * 1024 * 1024
+    private static let forwardBufferSeconds: TimeInterval = 120
+
     init() {
+        configureCacheLimit()
         configureSession()
         configureRemoteCommands()
     }
@@ -58,8 +63,10 @@ final class AudioManager {
         tearDownLofi()
 
         lofiItem = AVPlayerItem(url: streamURL)
+        lofiItem?.preferredForwardBufferDuration = Self.forwardBufferSeconds
         lofiPlayer = AVPlayer(playerItem: lofiItem)
         lofiPlayer?.volume = 0
+        lofiPlayer?.automaticallyWaitsToMinimizeStalling = true
 
         lofiLoopObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
@@ -69,11 +76,16 @@ final class AudioManager {
             self?.lofiPlayer?.seek(to: .zero)
             if self?.isPlaying == true { self?.lofiPlayer?.play() }
         }
-
-        lofiPlayer?.automaticallyWaitsToMinimizeStalling = true
     }
 
     // MARK: - Private
+
+    private func configureCacheLimit() {
+        URLCache.shared = URLCache(
+            memoryCapacity: Self.segmentCacheCapacity,
+            diskCapacity: Self.segmentCacheCapacity
+        )
+    }
 
     private func configureSession() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
@@ -139,11 +151,9 @@ final class AudioManager {
         tearDownLofi()
 
         lofiItem = AVPlayerItem(url: streamURL)
+        lofiItem?.preferredForwardBufferDuration = Self.forwardBufferSeconds
         lofiPlayer = AVPlayer(playerItem: lofiItem)
 
-        // When the track reaches the end, seek back to the beginning and replay.
-        // On the second loop all segments should already be in the device's URL
-        // cache, so playback restarts without any network requests.
         lofiLoopObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: lofiItem,
@@ -165,6 +175,7 @@ final class AudioManager {
         lofiPlayer?.pause()
         lofiPlayer = nil
         lofiItem = nil
+        URLCache.shared.removeAllCachedResponses()
     }
 
     private func resolveLofiURL(filename: String) async -> URL {
