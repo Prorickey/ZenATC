@@ -13,8 +13,6 @@ struct SettingsView: View {
     @Binding var showSettings: Bool
     @Binding var showUpgrade: Bool
 
-    private let settingsAccent = Color(red: 0.878, green: 0.298, blue: 0.149)
-
     private let appearanceColors: [Color] = [
         Color(red: 0.91, green: 0.28, blue: 0.16),
         Color(red: 0.12, green: 0.55, blue: 0.29),
@@ -73,7 +71,7 @@ struct SettingsView: View {
         HStack(alignment: .center) {
             Text("Settings")
                 .font(.system(size: 34.77, weight: .bold))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
 
             Spacer()
 
@@ -82,9 +80,9 @@ struct SettingsView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(settingsAccent)
+                    .foregroundStyle(themeManager.theme.foreground)
                     .frame(width: 42.24, height: 42.24)
-                    .background(settingsAccent.opacity(0.12))
+                    .background(themeManager.theme.foreground.opacity(0.12))
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
@@ -97,7 +95,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("App appearance")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
 
             HStack(spacing: 12) {
                 ForEach(0..<3, id: \.self) { index in
@@ -111,7 +109,7 @@ struct SettingsView: View {
                     } label: {
                         ZStack {
                             Circle()
-                                .stroke(settingsAccent, lineWidth: 1.5)
+                                .stroke(themeManager.theme.foreground, lineWidth: 1.5)
                                 .frame(width: 52, height: 52)
                                 .opacity(isSelected ? 1 : 0)
 
@@ -132,7 +130,7 @@ struct SettingsView: View {
                 HStack(spacing: 6) {
                     Text("+ 7 more in")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(settingsAccent)
+                        .foregroundStyle(themeManager.theme.foreground)
                     ProBadge()
                 }
             }
@@ -144,7 +142,7 @@ struct SettingsView: View {
         VStack(spacing: 14) {
             Text("Unlock more music, custom ATC audio filters, and 50 more airports")
                 .font(.system(size: 19.23, weight: .medium))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
                 .multilineTextAlignment(.center)
                 .frame(width: 330)
 
@@ -155,13 +153,13 @@ struct SettingsView: View {
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(themeManager.theme.background)
                     .frame(width: 200, height: 60)
-                    .background(settingsAccent)
+                    .background(themeManager.theme.foreground)
                     .clipShape(Capsule())
             }
             .buttonStyle(.plain)
         }
         .frame(width: 370, height: 204)
-        .background(settingsAccent.opacity(0.13))
+        .background(themeManager.theme.foreground.opacity(0.13))
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .frame(maxWidth: .infinity)
     }
@@ -171,29 +169,29 @@ struct SettingsView: View {
             HStack(spacing: 8.5) {
                 Text("ATC radio filters")
                     .font(.system(size: 29.56, weight: .semibold))
-                    .foregroundStyle(settingsAccent)
+                    .foregroundStyle(themeManager.theme.foreground)
 
                 Text("PRO")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(themeManager.theme.background)
                     .frame(width: 42.51, height: 23.51)
-                    .background(settingsAccent)
+                    .background(themeManager.theme.foreground)
                     .clipShape(RoundedRectangle(cornerRadius: 5.91))
             }
 
             VStack(spacing: 11) {
                 ForEach(filters) { filter in
-                    FilterRow(filter: filter, accent: settingsAccent)
+                    FilterRow(filter: filter, accent: themeManager.theme.foreground)
                 }
 
                 HStack {
                     Spacer()
                     Text("Try it")
                         .font(.system(size: 20.95, weight: .semibold))
-                        .foregroundStyle(settingsAccent)
+                        .foregroundStyle(themeManager.theme.foreground)
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(settingsAccent)
+                        .foregroundStyle(themeManager.theme.foreground)
                         .rotationEffect(.degrees(-20))
                 }
                 .padding(.trailing, 4)
@@ -261,7 +259,7 @@ struct SettingsView: View {
     }
 
     private var premiumAudioCard: some View {
-        PremiumAudioCard(accent: settingsAccent)
+        PremiumAudioCard(accent: themeManager.theme.foreground)
             .padding(.horizontal, 20)
     }
 
@@ -292,10 +290,10 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Make it your own")
                 .font(.system(size: 15, weight: .medium))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
                 .padding(.horizontal, 20)
 
-            ThemeCarousel(accent: settingsAccent, interval: 3.0)
+            ThemeCarousel(accent: themeManager.theme.foreground, interval: 3.0)
         }
     }
 
@@ -303,7 +301,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Boring stuff")
                 .font(.system(size: 29.56, weight: .bold))
-                .foregroundStyle(settingsAccent)
+                .foregroundStyle(themeManager.theme.foreground)
 
             HStack(alignment: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 18) {
@@ -319,7 +317,7 @@ struct SettingsView: View {
                 }
             }
             .font(.system(size: 14, weight: .medium))
-            .foregroundStyle(settingsAccent)
+            .foregroundStyle(themeManager.theme.foreground)
         }
         .padding(12)
         .clipShape(RoundedRectangle(cornerRadius: 20))

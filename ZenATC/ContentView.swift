@@ -71,7 +71,7 @@ struct ContentView: View {
 
             if showAirports {
                 AirportsListView(showAirports: $showAirports, currentAirportIndex: $audio.currentAirportIndex)
-                    .transition(.move(edge: .top))
+                    .transition(.move(edge: .bottom))
                     .zIndex(2)
             }
 
@@ -407,6 +407,8 @@ private struct MixerSliderView: View {
                     .mask(alignment: .center) {
                         RoundedRectangle(cornerRadius: thumbHeight / 2)
                             .frame(width: clipWidth, height: thumbHeight)
+                            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
+                            .animation(.easeOut(duration: 0.40), value: smoothProgress)
                     }
                     .scaleEffect(x: 1, y: bumpScale, anchor: .center)
                     .offset(x: thumbX)
@@ -418,12 +420,14 @@ private struct MixerSliderView: View {
                     Image(systemName: "headphones")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.white)
+                        .opacity(0.65)
                         .frame(width: iconFrame)
                         .offset(x: iconInset)
 
                     Image(systemName: "airplane")
                         .font(.system(size: 18, weight: .medium))
                         .foregroundStyle(.white)
+                        .opacity(0.65)
                         .frame(width: iconFrame)
                         .offset(x: geo.size.width - iconInset - iconFrame)
                 }
@@ -433,6 +437,8 @@ private struct MixerSliderView: View {
                         .mask(alignment: .center) {
                             RoundedRectangle(cornerRadius: thumbHeight / 2)
                                 .frame(width: clipWidth, height: thumbHeight)
+                                .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
+                                .animation(.easeOut(duration: 0.40), value: smoothProgress)
                         }
                         .scaleEffect(x: 1, y: bumpScale, anchor: .center)
                         .offset(x: thumbX)
