@@ -23,7 +23,7 @@ struct AirportsListView: View {
                     HStack(alignment: .center) {
                         Text("All Airports")
                             .font(.gtStandard(size: 32))
-                            .fontWeight(.bold)
+                            .fontWeight(.heavy)
                             .foregroundStyle(themeManager.theme.foreground)
 
                         Spacer()
@@ -147,6 +147,14 @@ private struct ProSectionRow: View {
         .padding(.horizontal, 20)
         .frame(height: 68)
     }
+}
+
+#Preview {
+    AirportsListView(
+        showAirports: .constant(true),
+        currentAirportIndex: .constant(0)
+    )
+    .environment(ThemeManager())
 }
 
 // MARK: - Dashed Divider
