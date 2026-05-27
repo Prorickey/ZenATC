@@ -1,6 +1,6 @@
 # ZenATC
 
-An iOS app that blends live ATC radio with lofi beats. Swipe through airports, mix the balance between ATC chatter and music, and cycle through colour themes.
+An iOS app that blends live ATC radio with lofi beats. Swipe through airports, mix the balance between ATC chatter and music, and cycle through colour themes. Background audio and lock screen controls included.
 
 ---
 
@@ -35,7 +35,7 @@ An iOS app that blends live ATC radio with lofi beats. Swipe through airports, m
 ```
 
 **ATC audio** is bundled in the app and played locally — no network required.  
-**Lofi beats** are streamed as VOD HLS from Cloudflare CDN. Each 4-second `.ts` segment is cached permanently at the edge; second playthrough is fully offline.
+**Lofi beats** are streamed as VOD HLS from Cloudflare CDN. Each 4-second `.ts` segment is cached at the edge. The app limits its local buffer to a 2-minute sliding window (~5MB) so played segments are evicted as new ones arrive.
 
 ---
 
@@ -50,6 +50,18 @@ The entitlements file (`ZenATC.entitlements`) is set to `development`. Change to
 
 ---
 
+## Features
+
+- **Onboarding** — guided 3-step intro (only shown once, persisted via `@AppStorage`)
+- **Splash animation** — "lofi atc" flyby plays on every fresh app open
+- **Audio preloading** — ATC and lofi streams are buffered during the splash so playback starts instantly
+- **Fade-in** — 1.5s volume ramp when starting playback or adjusting the mixer during onboarding
+- **Background audio** — playback continues when the screen locks or app is backgrounded (`UIBackgroundModes: audio`)
+- **Lock screen / Control Center** — Now Playing metadata (track name, airport, app icon) with play/pause and track skip
+- **Sliding-window cache** — URLCache capped at 5MB with 2-minute forward buffer; played segments are evicted automatically
+
+---
+
 ## Project Structure
 
 ```
@@ -59,10 +71,16 @@ ZenATC/
 │   ├── Assets.xcassets/         # Fonts, app icon, carousel images
 │   ├── AttestationManager.swift # App Attest key lifecycle + assertion flow
 │   ├── AudioManager.swift       # AVAudioPlayer (ATC) + AVPlayer (lofi HLS)
-│   ├── ContentView.swift        # Root SwiftUI view
+│   │                            #   + Now Playing / remote commands
+│   │                            #   + fade-in, sliding-window cache
+│   ├── ContentView.swift        # Root SwiftUI view + splash overlay
+│   ├── OnboardingView.swift     # First-launch onboarding steps
 │   ├── Models.swift             # Airport + LofiTrack data
 │   ├── PurchaseManager.swift    # StoreKit 2 purchase flow
+│   ├── SettingsView.swift       # Settings panel
 │   ├── Theme.swift              # AppTheme, ThemeManager, font extensions
+│   ├── ZenATC.entitlements      # App Attest + background audio capabilities
+│   ├── Info.plist               # Background modes (audio)
 │   └── ZenATCApp.swift          # App entry point
 └── backend/                     # Go streaming server
     ├── audio/                   # Source lofi MP3s (not in git — copy manually)
@@ -72,6 +90,7 @@ ZenATC/
     ├── challenge.go             # Stateless JWT challenge endpoint
     ├── main.go                  # Gin server + HLS file handler
     ├── verification.go          # Apple attestation CBOR verification
+    ├── .env.example             # Environment variable template
     ├── docker-compose.yml       # Production deployment
     ├── docker.sh                # Local build/run + registry deploy
     ├── Dockerfile               # Multi-stage build; generates HLS on first start
@@ -106,11 +125,18 @@ backend/audio/
 
 ### Environment variables (`.env`)
 
+Copy the template and fill in values:
+
+```bash
+cp backend/.env.example backend/.env
 ```
-CLOUDFLARE_DOMAIN=zenatc.bedson.tech
-CLOUDFLARE_URL_SIGNING_SECRET=<base64-encoded 32 bytes>
-CHALLENGE_SIGNING_SECRET=<base64-encoded 32 bytes>
-```
+
+| Variable | Description |
+|----------|-------------|
+| `CLOUDFLARE_DOMAIN` | Domain serving HLS content |
+| `CLOUDFLARE_URL_SIGNING_SECRET` | HMAC-SHA256 secret for signed CDN URLs (base64, 32+ bytes) |
+| `CHALLENGE_SIGNING_SECRET` | HMAC-SHA256 secret for JWT challenges (base64, 32+ bytes) |
+| `APPLE_APP_ID` | Team ID prefix + bundle identifier (e.g. `TEAMID.com.example.app`) |
 
 Generate secrets with `openssl rand -base64 32`. The `CLOUDFLARE_URL_SIGNING_SECRET` must match the value set in the Cloudflare Worker (`wrangler secret put CLOUDFLARE_URL_SIGNING_SECRET`).
 
