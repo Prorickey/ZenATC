@@ -156,8 +156,8 @@ private struct AirportPageView: View {
 
     var body: some View {
         GeometryReader { geo in
-            let scaleX = naturalTextWidth > 0 ? geo.size.width / naturalTextWidth : 1
-            let scaleY = referenceCapHeight > 0 ? geo.size.height / referenceCapHeight : 1
+            let scaleX = naturalTextWidth > 0 ? geo.size.width / naturalTextWidth - 0.05 : 1
+            let scaleY = referenceCapHeight > 0 ? geo.size.height / referenceCapHeight - 0.15 : 1
 
             Text(airport.code.uppercased())
                 .font(.gtStandardAirport(size: 200))
@@ -306,53 +306,101 @@ private struct InlineTrackPicker: View {
 private struct MixerSliderView: View {
     @Binding var balance: Double
     @Environment(ThemeManager.self) private var themeManager
-    @State private var dragStartBalance: Double?
-
-    private let thumbWidth: CGFloat = 62
-    private let trackHeight: CGFloat = 29
-    private let thumbMinX: CGFloat = 38
+    @State private var isDragging = false
+    @State private var hasMoved = false
 
     var body: some View {
         GeometryReader { geo in
-            let thumbMaxX = geo.size.width - thumbWidth - 38
-            let usableRange = thumbMaxX - thumbMinX
-            let thumbX = thumbMinX + CGFloat(balance) * usableRange
+            let trackHeight: CGFloat = isDragging ? 36 : 29
+            let thumbWidth: CGFloat = isDragging ? 66 : 62
+            let thumbHeight: CGFloat = isDragging ? 28 : 24
+            let trackInset: CGFloat = 2
+            let iconInset: CGFloat = 14
+            let iconFrame: CGFloat = 20
+
+            let usableRange = max(geo.size.width - (trackInset * 2) - thumbWidth, 1)
+            let baseThumbLeft = trackInset + CGFloat(balance) * usableRange
+            let baseThumbRight = baseThumbLeft + thumbWidth
+            let endClipWidth = iconInset + iconFrame
+            let endZone: CGFloat = 10
+            let leftDistance = max(baseThumbLeft - trackInset, 0)
+            let rightDistance = max((geo.size.width - trackInset) - baseThumbRight, 0)
+            let leftProgress = max(0, min((endZone - leftDistance) / endZone, 1))
+            let rightProgress = max(0, min((endZone - rightDistance) / endZone, 1))
+            let endProgress = max(leftProgress, rightProgress)
+            let smoothProgress = endProgress * endProgress * (3 - 2 * endProgress)
+            let clipWidth = thumbWidth - (thumbWidth - endClipWidth) * smoothProgress
+            let leftIconCenter = iconInset + (iconFrame / 2)
+            let rightIconCenter = geo.size.width - iconInset - (iconFrame / 2)
+            let targetCenter = rightProgress > leftProgress ? rightIconCenter : leftIconCenter
+            let baseCenter = baseThumbLeft + (thumbWidth / 2)
+            let desiredCenter = baseCenter + (targetCenter - baseCenter) * smoothProgress
+            let thumbX = desiredCenter - (thumbWidth / 2)
+            let thumbLeft = thumbX
+            let thumbRight = thumbX + thumbWidth
+            let bumpScale = 1 + 0.04 * smoothProgress
+            let leftCovered = thumbLeft <= leftIconCenter && leftIconCenter <= thumbRight
+            let rightCovered = thumbLeft <= rightIconCenter && rightIconCenter <= thumbRight
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(themeManager.theme.foreground.opacity(0.2))
-
-                Image(systemName: "headphones")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(themeManager.theme.foreground)
-                    .frame(width: 20)
-                    .offset(x: 14)
-
-                Image(systemName: "airplane")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(themeManager.theme.foreground)
-                    .frame(width: 20)
-                    .offset(x: geo.size.width - 34)
+                    .frame(height: trackHeight)
 
                 Capsule()
                     .fill(themeManager.theme.foreground)
-                    .frame(width: thumbWidth)
+                    .frame(width: thumbWidth, height: thumbHeight)
+                    .mask(alignment: .center) {
+                        RoundedRectangle(cornerRadius: thumbHeight / 2)
+                            .frame(width: clipWidth, height: thumbHeight)
+                    }
+                    .scaleEffect(x: 1, y: bumpScale, anchor: .center)
                     .offset(x: thumbX)
-                    .gesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                let start = dragStartBalance ?? balance
-                                if dragStartBalance == nil { dragStartBalance = balance }
-                                let delta = Double(value.translation.width) / Double(usableRange)
-                                balance = max(0, min(start + delta, 1))
-                            }
-                            .onEnded { _ in
-                                dragStartBalance = nil
-                            }
-                    )
+
+                Image(systemName: "headphones")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(leftCovered ? themeManager.theme.background : themeManager.theme.foreground)
+                    .frame(width: iconFrame)
+                    .offset(x: iconInset)
+
+                Image(systemName: "airplane")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(rightCovered ? themeManager.theme.background : themeManager.theme.foreground)
+                    .frame(width: iconFrame)
+                    .offset(x: geo.size.width - iconInset - iconFrame)
             }
+            .frame(height: 36, alignment: .center)
+            .contentShape(Capsule())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        isDragging = true
+                        if !hasMoved {
+                            let distance = hypot(value.translation.width, value.translation.height)
+                            if distance > 6 { hasMoved = true }
+                        }
+                        let newValue = valueFromLocation(
+                            value.location.x,
+                            width: geo.size.width,
+                            inset: trackInset,
+                            thumbWidth: thumbWidth
+                        )
+                        balance = min(max(newValue, 0), 1)
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                        hasMoved = false
+                    }
+            )
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
         }
-        .frame(height: trackHeight)
+        .frame(height: 36)
+    }
+
+    private func valueFromLocation(_ x: CGFloat, width: CGFloat, inset: CGFloat, thumbWidth: CGFloat) -> Double {
+        let usable = max(width - (inset * 2) - thumbWidth, 1)
+        let clamped = min(max(x - inset - (thumbWidth / 2), 0), usable)
+        return Double(clamped / usable)
     }
 }
 
