@@ -79,7 +79,7 @@ struct SettingsView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 18)
-        .padding(.top, 92)
+        .padding(.top, 20)
     }
 
     private var appAppearance: some View {
@@ -89,25 +89,37 @@ struct SettingsView: View {
                 .foregroundStyle(settingsAccent)
 
             HStack(spacing: 12) {
-                Circle()
-                    .stroke(settingsAccent, lineWidth: 1)
-                    .frame(width: 46, height: 46)
-                    .overlay(
-                        Circle()
-                            .fill(appearanceColors[0])
-                            .frame(width: 36, height: 36)
-                    )
+                ForEach(0..<3, id: \.self) { index in
+                    let theme = AppTheme.all[index]
+                    let isSelected = themeManager.currentIndex == index
 
-                ForEach(appearanceColors.indices.dropFirst(), id: \.self) { index in
-                    Circle()
-                        .fill(appearanceColors[index])
-                        .frame(width: 45.37, height: 45.37)
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            themeManager.setTheme(index)
+                        }
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .stroke(settingsAccent, lineWidth: 1.5)
+                                .frame(width: 52, height: 52)
+                                .opacity(isSelected ? 1 : 0)
+
+                            Circle()
+                                .fill(theme.background)
+                                .frame(width: isSelected ? 40 : 46, height: isSelected ? 40 : 46)
+
+                            Circle()
+                                .fill(theme.foreground)
+                                .frame(width: isSelected ? 18 : 20, height: isSelected ? 18 : 20)
+                        }
+                        .frame(width: 52, height: 52)
+                        .animation(.easeInOut(duration: 0.2), value: isSelected)
+                    }
+                    .buttonStyle(.plain)
                 }
 
-                Spacer()
-
                 HStack(spacing: 6) {
-                    Text("7+ more in")
+                    Text("+ 7 more in")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(settingsAccent)
                     ProBadge()
@@ -128,9 +140,9 @@ struct SettingsView: View {
             Button {
             } label: {
                 Text("Upgrade now")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(themeManager.theme.background)
-                    .frame(width: 246, height: 44)
+                    .frame(width: 200, height: 60)
                     .background(settingsAccent)
                     .clipShape(Capsule())
             }
@@ -143,8 +155,8 @@ struct SettingsView: View {
     }
 
     private var filterSection: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 23) {
+            HStack(spacing: 8.5) {
                 Text("ATC radio filters")
                     .font(.system(size: 29.56, weight: .semibold))
                     .foregroundStyle(settingsAccent)
@@ -157,26 +169,25 @@ struct SettingsView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 5.91))
             }
 
-            VStack(spacing: 12) {
+            VStack(spacing: 11) {
                 ForEach(filters) { filter in
                     FilterRow(filter: filter, accent: settingsAccent)
                 }
 
                 HStack {
                     Spacer()
-                    HStack(spacing: 10) {
-                        Text("Try it")
-                            .font(.system(size: 20.95, weight: .semibold))
-                            .foregroundStyle(settingsAccent)
-
-                        RoundedRectangle(cornerRadius: 21.11)
-                            .stroke(settingsAccent, lineWidth: 1)
-                            .frame(width: 54.9, height: 41.7)
-                    }
+                    Text("Try it")
+                        .font(.system(size: 20.95, weight: .semibold))
+                        .foregroundStyle(settingsAccent)
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(settingsAccent)
+                        .rotationEffect(.degrees(-20))
                 }
+                .padding(.trailing, 4)
             }
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 21.5)
     }
 
     private var airportCard: some View {
@@ -238,29 +249,8 @@ struct SettingsView: View {
     }
 
     private var premiumAudioCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                sectionTitle("Premium Audio")
-                ProBadge()
-            }
-
-            Text("Professionally produced spatial audio for relaxation and focus")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(themeManager.theme.foreground.opacity(0.7))
-
-            HStack(spacing: 12) {
-                ForEach(0..<3, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: 20)
-                        .stroke(themeManager.theme.foreground.opacity(0.4), lineWidth: 1)
-                        .frame(width: 60, height: 28)
-                }
-            }
-            .padding(.top, 6)
-        }
-        .padding(16)
-        .background(themeManager.theme.foreground.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 18))
-        .padding(.horizontal, 20)
+        PremiumAudioCard(accent: settingsAccent)
+            .padding(.horizontal, 20)
     }
 
     private var joinButton: some View {
@@ -358,39 +348,54 @@ private struct FilterRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
+            // Radio indicator
             Circle()
-                .fill(filter.isSelected ? accent : accent.opacity(0.25))
-                .frame(width: 12, height: 12)
+                .strokeBorder(
+                    filter.isSelected ? Color.white : accent.opacity(0.3),
+                    lineWidth: filter.isSelected ? 2 : 1.5
+                )
+                .background(Circle().fill(filter.isSelected ? Color.clear : accent.opacity(0.12)))
+                .frame(width: filter.isSelected ? 28 : 22, height: filter.isSelected ? 28 : 22)
 
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(spacing: 6) {
+            // Labels
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 7) {
                     Text(filter.title)
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(accent)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(filter.isSelected ? .white : accent)
                     if filter.isPro {
-                        ProBadge()
+                        Text("PRO")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(filter.isSelected ? accent : .white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(filter.isSelected ? Color.white : accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
                 }
                 Text(filter.subtitle)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(accent.opacity(0.75))
+                    .foregroundStyle(filter.isSelected ? .white.opacity(0.85) : accent.opacity(0.65))
             }
 
             Spacer()
 
-            Image(systemName: "play.fill")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(accent)
+            // Play button
+            Circle()
+                .fill(filter.isSelected ? Color.white : accent)
+                .frame(width: 44, height: 44)
+                .overlay(
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(filter.isSelected ? accent : Color.white)
+                        .offset(x: 1.5)
+                )
         }
         .frame(height: filter.isSelected ? 70 : 69)
         .padding(.horizontal, 16)
         .background(
             RoundedRectangle(cornerRadius: 18)
-                .stroke(accent.opacity(0.2), lineWidth: filter.isSelected ? 0 : 1)
-                .background(
-                    RoundedRectangle(cornerRadius: 18)
-                        .fill(accent.opacity(filter.isSelected ? 0.15 : 0.08))
-                )
+                .fill(filter.isSelected ? accent : accent.opacity(0.08))
         )
     }
 }
@@ -478,6 +483,68 @@ private struct AirportCard: View {
                 .foregroundStyle(colors.0)
         }
         .frame(width: 120, height: 170)
+    }
+}
+
+private struct PremiumAudioCard: View {
+    let accent: Color
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            // Card background
+            RoundedRectangle(cornerRadius: 20)
+                .fill(accent.opacity(0.1))
+
+            VStack(alignment: .leading, spacing: 0) {
+                // Header text
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text("Premium Audio")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(accent)
+                        Text("PRO")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(accent)
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                    }
+                    Text("Professionally produced spatial audio for\nrelaxation and focus")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(accent.opacity(0.8))
+                        .lineSpacing(2)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 18)
+                .padding(.bottom, 12)
+
+                // Image area
+                ZStack {
+                    // Spirals use multiply blend to knock out white on card bg
+                    VStack(spacing: 0) {
+                        Image("spiral_top")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .blendMode(.multiply)
+
+                        Image("spiral_bottom")
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .blendMode(.multiply)
+                    }
+                    .padding(.horizontal, 4)
+
+                    // Boy centered over the spirals
+                    Image("boy")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 200)
+                }
+                .padding(.bottom, 8)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 }
 

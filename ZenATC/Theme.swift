@@ -54,6 +54,11 @@ final class ThemeManager {
     func cycleTheme() {
         currentIndex = (currentIndex + 1) % AppTheme.all.count
     }
+
+    func setTheme(_ index: Int) {
+        guard index >= 0 && index < AppTheme.all.count else { return }
+        currentIndex = index
+    }
 }
 
 // MARK: - Color helpers
