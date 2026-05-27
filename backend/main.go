@@ -60,6 +60,7 @@ func main() {
 	router.POST("/verify-and-stream", verifyAndStreamHandler)
 	router.POST("/attest-key", attestKeyHandler)
 	router.POST("/assert-and-stream", assertAndStreamHandler)
+	router.GET("/stream-url", streamURLHandler)
 
 	// HLS audio — VOD segments pre-sliced at build time.
 	//

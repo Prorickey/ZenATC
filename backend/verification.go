@@ -118,6 +118,30 @@ func verifyAndStreamHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"stream_url": streamURL})
 }
 
+// streamURLHandler issues a signed CDN URL without any device attestation.
+// Used on free Apple Developer accounts that don't support App Attest.
+// TODO: Remove this endpoint and use /assert-and-stream exclusively once
+//       the Apple Developer account is upgraded to a paid membership.
+//
+// GET /stream-url?stream_id=lofi_late_night
+// Response 200: { "stream_url": "..." }
+func streamURLHandler(c *gin.Context) {
+	streamID := c.Query("stream_id")
+	if !validStreamID.MatchString(streamID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid or missing stream_id"})
+		return
+	}
+
+	streamURL, err := signedStreamURL(streamID, streamURLTTL)
+	if err != nil {
+		log.Printf("[cdn] failed to sign URL for %q: %v", streamID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate stream URL"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"stream_url": streamURL})
+}
+
 // MARK: - Orchestration
 
 // verifyAttestation runs all Phase 3 checks and returns the EC public key from
