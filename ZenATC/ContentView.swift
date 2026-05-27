@@ -380,17 +380,27 @@ private struct MixerSliderView: View {
             let baseCenter = baseThumbLeft + (thumbWidth / 2)
             let desiredCenter = baseCenter + (targetCenter - baseCenter) * smoothProgress
             let thumbX = desiredCenter - (thumbWidth / 2)
-            let thumbLeft = thumbX
-            let thumbRight = thumbX + thumbWidth
             let bumpScale = 1 + 0.04 * smoothProgress
-            let leftCovered = thumbLeft <= leftIconCenter && leftIconCenter <= thumbRight
-            let rightCovered = thumbLeft <= rightIconCenter && rightIconCenter <= thumbRight
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(themeManager.theme.foreground.opacity(0.2))
                     .frame(height: trackHeight)
 
+                // Base icons in fg — drawn before the pill so they show outside it
+                Image(systemName: "headphones")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(themeManager.theme.foreground)
+                    .frame(width: iconFrame)
+                    .offset(x: iconInset)
+
+                Image(systemName: "airplane")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(themeManager.theme.foreground)
+                    .frame(width: iconFrame)
+                    .offset(x: geo.size.width - iconInset - iconFrame)
+
+                // Pill
                 Capsule()
                     .fill(themeManager.theme.foreground)
                     .frame(width: thumbWidth, height: thumbHeight)
@@ -401,17 +411,32 @@ private struct MixerSliderView: View {
                     .scaleEffect(x: 1, y: bumpScale, anchor: .center)
                     .offset(x: thumbX)
 
-                Image(systemName: "headphones")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(leftCovered ? themeManager.theme.background : themeManager.theme.foreground)
-                    .frame(width: iconFrame)
-                    .offset(x: iconInset)
+                // White icons masked to the pill shape — visible only where pill covers them
+                ZStack(alignment: .leading) {
+                    Color.clear
 
-                Image(systemName: "airplane")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(rightCovered ? themeManager.theme.background : themeManager.theme.foreground)
-                    .frame(width: iconFrame)
-                    .offset(x: geo.size.width - iconInset - iconFrame)
+                    Image(systemName: "headphones")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: iconFrame)
+                        .offset(x: iconInset)
+
+                    Image(systemName: "airplane")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundStyle(.white)
+                        .frame(width: iconFrame)
+                        .offset(x: geo.size.width - iconInset - iconFrame)
+                }
+                .mask(alignment: .leading) {
+                    Capsule()
+                        .frame(width: thumbWidth, height: thumbHeight)
+                        .mask(alignment: .center) {
+                            RoundedRectangle(cornerRadius: thumbHeight / 2)
+                                .frame(width: clipWidth, height: thumbHeight)
+                        }
+                        .scaleEffect(x: 1, y: bumpScale, anchor: .center)
+                        .offset(x: thumbX)
+                }
             }
             .frame(height: 36 * scale, alignment: .center)
             .contentShape(Capsule())
