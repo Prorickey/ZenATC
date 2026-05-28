@@ -21,7 +21,21 @@ final class AudioManager {
     }
 
     var currentAirportIndex = 0
-    var selectedTrackIndex = 0
+
+    let allTracks = LofiTrack.all
+    // Which lofi tracks appear in the picker wheel. All enabled on launch;
+    // toggling a pack off in Settings removes it from here (and the wheel).
+    var enabledTrackIDs: Set<UUID> = Set(LofiTrack.all.map(\.id))
+    // Selection is tracked by identity so it survives the available list changing.
+    var selectedTrackID: UUID = LofiTrack.all[0].id
+
+    var availableTracks: [LofiTrack] {
+        allTracks.filter { enabledTrackIDs.contains($0.id) }
+    }
+
+    var selectedTrack: LofiTrack {
+        allTracks.first { $0.id == selectedTrackID } ?? allTracks[0]
+    }
 
     // Sleep timer — auto fade-out + pause after a chosen duration
     private(set) var sleepActive = false
@@ -37,7 +51,6 @@ final class AudioManager {
     private var lofiPlayer: AVPlayer?
 
     private let airports = Airport.all
-    private let tracks = LofiTrack.all
 
     init() {
         configureSession()
@@ -94,9 +107,32 @@ final class AudioManager {
     }
 
     private func loadLofi() {
-        let filename = tracks[selectedTrackIndex].filename
+        let filename = selectedTrack.filename
         guard let url = URL(string: "\(backendBaseURL)/radio/\(filename)/index.m3u8") else { return }
         lofiPlayer = AVPlayer(url: url)
+    }
+
+    // MARK: - Track selection
+
+    /// Selects the track at a position within `availableTracks` (the picker wheel order).
+    func selectTrack(atAvailablePosition pos: Int) {
+        let tracks = availableTracks
+        guard tracks.indices.contains(pos) else { return }
+        selectedTrackID = tracks[pos].id
+    }
+
+    /// Adds/removes a track from the wheel. Keeps at least one enabled, and moves
+    /// selection to a remaining track if the selected one is turned off.
+    func toggleTrack(_ id: UUID) {
+        if enabledTrackIDs.contains(id) {
+            guard enabledTrackIDs.count > 1 else { return }
+            enabledTrackIDs.remove(id)
+            if selectedTrackID == id {
+                selectedTrackID = availableTracks.first?.id ?? selectedTrackID
+            }
+        } else {
+            enabledTrackIDs.insert(id)
+        }
     }
 
     private func updateVolumes() {

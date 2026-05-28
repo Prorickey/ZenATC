@@ -20,25 +20,32 @@ struct ContentView: View {
     @State private var volumeOverlaySnoozed = false
 
     private let airports = Airport.all
-    private let tracks = LofiTrack.all
 
     var body: some View {
         @Bindable var audio = audio
         let showVolumeOverlay = volumeMonitor.volume <= 0 && !volumeOverlaySnoozed
+        // Picker works in positions; map them to/from the identity-based selection.
+        let trackPosition = Binding<Int>(
+            get: { audio.availableTracks.firstIndex { $0.id == audio.selectedTrackID } ?? 0 },
+            set: { audio.selectTrack(atAvailablePosition: $0) }
+        )
+        // Stable per-track seed (index into the full list) so the waves only reseed
+        // when the actual track changes, not when the available set is toggled.
+        let trackSeed = audio.allTracks.firstIndex { $0.id == audio.selectedTrackID } ?? 0
 
         ZStack(alignment: .top) {
             themeManager.theme.background.ignoresSafeArea()
 
             ZStack {
-                AudioWavesView(amplitude: 1 - audio.balance, seed: audio.selectedTrackIndex)
-                    .id(audio.selectedTrackIndex)
+                AudioWavesView(amplitude: 1 - audio.balance, seed: trackSeed)
+                    .id(trackSeed)
                     .transition(.opacity)
             }
             .frame(height: 136)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .ignoresSafeArea(.container, edges: .bottom)
             .allowsHitTesting(false)
-            .animation(.easeInOut(duration: 0.5), value: audio.selectedTrackIndex)
+            .animation(.easeInOut(duration: 0.5), value: trackSeed)
 
             VStack(spacing: 0) {
                 TopBarView(audio: audio, showSettings: $showSettings, showAirports: $showAirports, isPlaying: $audio.isPlaying)
@@ -65,16 +72,17 @@ struct ContentView: View {
                 BottomControlsView(
                     balance: $audio.balance,
                     isPlaying: $audio.isPlaying,
-                    tracks: tracks,
-                    selectedTrackIndex: $audio.selectedTrackIndex,
+                    tracks: audio.availableTracks,
+                    selectedTrackIndex: trackPosition,
                     showTrackPicker: $showTrackPicker,
                     isSliderActive: $isSliderActive
                 )
-                .onChange(of: audio.selectedTrackIndex) { audio.reloadLofi() }
+                .onChange(of: audio.selectedTrackID) { audio.reloadLofi() }
             }
 
             if showSettings {
                 SettingsView(
+                    audio: audio,
                     authManager: authManager,
                     purchaseManager: purchaseManager,
                     showSettings: $showSettings,
@@ -317,7 +325,7 @@ private struct RadarSweepView: View {
 
             // Leading sweep line position (from top, rotating clockwise).
             let baseAngle = fraction * 2 * .pi - .pi / 2
-            let coneSpread: Double = .pi / 2 
+            let coneSpread: Double = .pi / 2
 
             // Line 1 leads (bright); line 2 sits `coneSpread` behind it. The fading
             // trail fills only the cone between them so it's enclosed by line 2,
@@ -931,7 +939,7 @@ private struct AudioWavesView: View {
                 // Shared lofi beat groove (~78 BPM, 4/4): kick on beats 1 & 3, snare
                 // backbeat on 2 & 4. Gaussian pulses give a percussive "punch" that
                 // swells the whole wave in time, rather than a smooth sine throb.
-                let beatsPerSec: Double = 78 / 60.0
+                let beatsPerSec: Double = 60 / 60.0
                 let beatInBar: Double = (t * beatsPerSec).truncatingRemainder(dividingBy: 4.0) // 0..4
                 func pulse(_ pos: Double, _ width: Double) -> Double {
                     let d: Double = abs(beatInBar - pos)

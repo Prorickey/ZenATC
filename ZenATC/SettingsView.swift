@@ -8,6 +8,7 @@ import StoreKit
 
 struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
+    let audio: AudioManager
     let authManager: AuthManager
     let purchaseManager: PurchaseManager
     @Binding var showSettings: Bool
@@ -15,7 +16,6 @@ struct SettingsView: View {
     @Binding var currentAirportIndex: Int
 
     @State private var showAirportsList = false
-    @State private var selectedAudioPackIDs: Set<UUID> = []
 
     private let appearanceColors: [Color] = [
         Color(red: 0.91, green: 0.28, blue: 0.16),
@@ -30,15 +30,21 @@ struct SettingsView: View {
         FilterOption(title: "Hallway", subtitle: "Soft and muffled. Great for sleep", isPro: true, isSelected: false)
     ]
 
-    private let audioPacks: [AudioPack] = [
-        AudioPack(title: "Cold Ice", subtitle: "Medium-energy Lo-Fi", isPro: false),
-        AudioPack(title: "Cloudsurfing", subtitle: "Medium-energy Lo-Fi", isPro: false),
-        AudioPack(title: "Cloudsurfing", subtitle: "Medium-energy Lo-Fi", isPro: false),
-        AudioPack(title: "Airport Terminal", subtitle: "Medium-energy Lo-Fi", isPro: true),
-        AudioPack(title: "Retrowave", subtitle: "Medium-energy Lo-Fi", isPro: true),
-        AudioPack(title: "Thunderstorms", subtitle: "Medium-energy Lo-Fi", isPro: true),
-        AudioPack(title: "Affirmations", subtitle: "Medium-energy Lo-Fi", isPro: true),
-        AudioPack(title: "Caffeine", subtitle: "Medium-energy Lo-Fi", isPro: true)
+    // Free packs mirror the actual lofi tracks (toggling them adds/removes from the
+    // wheel); the locked pro packs below stay as upsell items.
+    private var audioPacks: [AudioPack] {
+        let free = audio.allTracks.map {
+            AudioPack(id: $0.id.uuidString, trackID: $0.id, title: $0.name, subtitle: "Lo-Fi", isPro: false)
+        }
+        return free + Self.proPacks
+    }
+
+    private static let proPacks: [AudioPack] = [
+        AudioPack(id: "pro-airport-terminal", trackID: nil, title: "Airport Terminal", subtitle: "Medium-energy Lo-Fi", isPro: true),
+        AudioPack(id: "pro-retrowave",        trackID: nil, title: "Retrowave",        subtitle: "Medium-energy Lo-Fi", isPro: true),
+        AudioPack(id: "pro-thunderstorms",    trackID: nil, title: "Thunderstorms",    subtitle: "Medium-energy Lo-Fi", isPro: true),
+        AudioPack(id: "pro-affirmations",     trackID: nil, title: "Affirmations",     subtitle: "Medium-energy Lo-Fi", isPro: true),
+        AudioPack(id: "pro-caffeine",         trackID: nil, title: "Caffeine",         subtitle: "Medium-energy Lo-Fi", isPro: true)
     ]
 
     var body: some View {
@@ -268,7 +274,7 @@ struct SettingsView: View {
                 Text("Audio packs")
                     .font(.system(size: 29.56, weight: .semibold))
                     .foregroundStyle(themeManager.theme.foreground)
-                Text("Select up to 3")
+                Text("Tap to add or remove from your wheel")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(themeManager.theme.foreground)
             }
@@ -278,24 +284,17 @@ struct SettingsView: View {
                     AudioPackRow(
                         pack: pack,
                         accent: themeManager.theme.foreground,
-                        isSelected: selectedAudioPackIDs.contains(pack.id)
+                        isSelected: pack.trackID.map { audio.enabledTrackIDs.contains($0) } ?? false
                     ) {
-                        toggleAudioPack(pack.id)
+                        guard let trackID = pack.trackID else { return }
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            audio.toggleTrack(trackID)
+                        }
                     }
                 }
             }
         }
         .padding(.horizontal, 20)
-    }
-
-    private func toggleAudioPack(_ id: UUID) {
-        if selectedAudioPackIDs.contains(id) {
-            selectedAudioPackIDs.remove(id)
-            return
-        }
-
-        guard selectedAudioPackIDs.count < 3 else { return }
-        selectedAudioPackIDs.insert(id)
     }
 
     private var premiumAudioCard: some View {
@@ -483,7 +482,8 @@ private struct FilterRow: View {
 }
 
 private struct AudioPack: Identifiable {
-    let id = UUID()
+    let id: String
+    let trackID: UUID?   // set for free packs tied to a lofi track; nil for pro packs
     let title: String
     let subtitle: String
     let isPro: Bool
@@ -802,6 +802,6 @@ private struct MiniAppScreen: View {
     @Previewable @State var show = true
     @Previewable @State var showUpgrade = false
     @Previewable @State var airportIndex = 0
-    SettingsView(authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show, showUpgrade: $showUpgrade, currentAirportIndex: $airportIndex)
+    SettingsView(audio: AudioManager(), authManager: AuthManager(), purchaseManager: PurchaseManager(), showSettings: $show, showUpgrade: $showUpgrade, currentAirportIndex: $airportIndex)
         .environment(ThemeManager())
 }
