@@ -650,7 +650,7 @@ private struct MixerSliderView: View {
             let scale: CGFloat = 1.5
             let trackHeight: CGFloat = 29 * scale
             let thumbWidth: CGFloat = (isDragging ? 66 : 62 * 0.7) * scale
-            let thumbHeight: CGFloat = (isDragging ? 28 : 24) * scale
+            let thumbHeight: CGFloat = trackHeight
             let trackInset: CGFloat = 2 * scale
             let iconInset: CGFloat = 14 * scale
             let iconFrame: CGFloat = 20 * scale
@@ -658,7 +658,10 @@ private struct MixerSliderView: View {
             let usableRange = max(geo.size.width - (trackInset * 2) - thumbWidth, 1)
             let baseThumbLeft = trackInset + CGFloat(balance) * usableRange
             let baseThumbRight = baseThumbLeft + thumbWidth
-            let endClipWidth = iconInset + iconFrame
+            // End-state pill stays centered on the icon but is wide enough that its
+            // outer edge reaches the very end of the background capsule (x = 0 / width),
+            // rather than stopping a few points short.
+            let endClipWidth = iconFrame + 2 * iconInset
             let endZone: CGFloat = 10 * scale
             let leftDistance = max(baseThumbLeft - trackInset, 0)
             let rightDistance = max((geo.size.width - trackInset) - baseThumbRight, 0)
@@ -667,12 +670,16 @@ private struct MixerSliderView: View {
             let endProgress = max(leftProgress, rightProgress)
             let smoothProgress = endProgress * endProgress * (3 - 2 * endProgress)
             let clipWidth = thumbWidth - (thumbWidth - endClipWidth) * smoothProgress
+            // At the ends the clipped pill grows past the nominal thumb width, so the
+            // capsule hosting it must grow too — otherwise the visible pill is capped
+            // short of the track end. Equals thumbWidth everywhere except the end morph.
+            let capsuleWidth = max(thumbWidth, clipWidth)
             let leftIconCenter = iconInset + (iconFrame / 2)
             let rightIconCenter = geo.size.width - iconInset - (iconFrame / 2)
             let targetCenter = rightProgress > leftProgress ? rightIconCenter : leftIconCenter
             let baseCenter = baseThumbLeft + (thumbWidth / 2)
             let desiredCenter = baseCenter + (targetCenter - baseCenter) * smoothProgress
-            let thumbX = desiredCenter - (thumbWidth / 2)
+            let thumbX = desiredCenter - (capsuleWidth / 2)
 
             ZStack(alignment: .leading) {
                 Capsule()
@@ -695,7 +702,7 @@ private struct MixerSliderView: View {
                 // Pill
                 Capsule()
                     .fill(themeManager.theme.foreground)
-                    .frame(width: thumbWidth, height: thumbHeight)
+                    .frame(width: capsuleWidth, height: thumbHeight)
                     .mask(alignment: .center) {
                         RoundedRectangle(cornerRadius: thumbHeight / 2)
                             .frame(width: clipWidth, height: thumbHeight)
@@ -704,25 +711,25 @@ private struct MixerSliderView: View {
                     }
                     .offset(x: thumbX)
 
-                // White icons masked to the pill shape — visible only where pill covers them
+                // Knockout icons (theme background) masked to the pill shape — visible only where pill covers them
                 ZStack(alignment: .leading) {
                     Color.clear
 
                     Image(systemName: "headphones")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(themeManager.theme.background)
                         .frame(width: iconFrame)
                         .offset(x: iconInset)
 
                     Image(systemName: "airplane")
                         .font(.system(size: 18, weight: .medium))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(themeManager.theme.background)
                         .frame(width: iconFrame)
                         .offset(x: geo.size.width - iconInset - iconFrame)
                 }
                 .mask(alignment: .leading) {
                     Capsule()
-                        .frame(width: thumbWidth, height: thumbHeight)
+                        .frame(width: capsuleWidth, height: thumbHeight)
                         .mask(alignment: .center) {
                             RoundedRectangle(cornerRadius: thumbHeight / 2)
                                 .frame(width: clipWidth, height: thumbHeight)
@@ -812,32 +819,55 @@ private struct AudioWavesView: View {
         let s = seed
         TimelineView(.animation) { context in
             Canvas { ctx, size in
-                let t = context.date.timeIntervalSinceReferenceDate
-                let barCount = 56
-                let barSpacing = size.width / CGFloat(barCount)
-                let maxBarHeight = size.height
+                let t: Double = context.date.timeIntervalSinceReferenceDate
+                let barCount = 40
+                let barSpacing: CGFloat = size.width / CGFloat(barCount)
+                let maxBarHeight: CGFloat = size.height
+                let amp: Double = amplitude
 
-                // Per-song wave-shape parameters (constant across bars)
-                let f1 = 1.2 + AudioWavesView.rand(s &* 7  &+ 1) * 0.6
-                let f2 = 0.5 + AudioWavesView.rand(s &* 11 &+ 2) * 0.4
-                let f3 = 2.4 + AudioWavesView.rand(s &* 13 &+ 3) * 0.8
-                let phaseOffset = AudioWavesView.rand(s) * .pi * 2
+                // Per-song wave-shape parameters (constant across bars).
+                let phaseSeed: Double = AudioWavesView.rand(s) * .pi * 2
+                let wavelengths: Double = 1.8 + AudioWavesView.rand(s &* 7 &+ 1) * 0.8   // 1.8..2.6 full cycles across the bars
+                let wavelengths2: Double = 0.7 + AudioWavesView.rand(s &* 11 &+ 2) * 0.4  // slow counter-ripple
+
+                // Shared lofi beat groove (~78 BPM, 4/4): kick on beats 1 & 3, snare
+                // backbeat on 2 & 4. Gaussian pulses give a percussive "punch" that
+                // swells the whole wave in time, rather than a smooth sine throb.
+                let beatsPerSec: Double = 30 / 60.0
+                let beatInBar: Double = (t * beatsPerSec).truncatingRemainder(dividingBy: 4.0) // 0..4
+                func pulse(_ pos: Double, _ width: Double) -> Double {
+                    let d: Double = abs(beatInBar - pos)
+                    let wrapped: Double = min(d, 4.0 - d)            // wrap so beat 4 → 0 is seamless
+                    return exp(-(wrapped * wrapped) / (width * width))
+                }
+                let kick: Double = pulse(0, 0.16) + pulse(2, 0.16)
+                let snare: Double = (pulse(1, 0.13) + pulse(3, 0.13)) * 0.6
+                let beat: Double = min(1.0, kick + snare)
 
                 for i in 0..<barCount {
-                    let x = CGFloat(i) * barSpacing + barSpacing / 2
-                    let phase = Double(i) / Double(barCount) * .pi * 2
+                    let x: CGFloat = CGFloat(i) * barSpacing + barSpacing / 2
+                    let frac: Double = Double(i) / Double(max(1, barCount - 1))   // 0=left, 1=right
 
-                    // Three traveling waves — neighbouring bars share phase, so the
-                    // overall envelope looks like a smooth wave moving across.
-                    let v = sin(phase * f1 + t * 0.9 + phaseOffset)
-                          + sin(phase * f2 - t * 0.5 + phaseOffset * 0.7) * 0.65
-                          + sin(phase * f3 + t * 1.4 + phaseOffset * 1.3) * 0.35
+                    // Genuine traveling wave: a primary sine sweeping across the bars,
+                    // plus a slower counter-ripple for organic motion.
+                    let theta1: Double = frac * .pi * 2 * wavelengths - t * 1.3 + phaseSeed
+                    let theta2: Double = frac * .pi * 2 * wavelengths2 + t * 0.6 + phaseSeed
+                    let wave: Double = sin(theta1) * 0.78 + sin(theta2) * 0.22   // ~ -1..1
+                    let waveNorm: Double = (wave + 1.0) / 2.0
 
-                    let normalized = max(0, min(1, (v + 2.0) / 4.0))
+                    // Per-bar shimmer — gentle jitter so bars stay alive between beats.
+                    let rj: Double = AudioWavesView.rand(i &* 47 &+ s &* 5 &+ 1)
+                    let shimmer: Double = (sin(t * (3.0 + rj * 1.5) + rj * .pi * 2) + 1) / 2
 
-                    let height = normalized * maxBarHeight * CGFloat(amplitude)
+                    // Wave-dominant baseline, lifted by the beat: a uniform punch across
+                    // all bars plus extra lift where the wave is already cresting.
+                    let baseline: Double = 0.16 + 0.40 * waveNorm + 0.06 * shimmer
+                    let beatSwell: Double = 0.30 * beat + 0.16 * beat * waveNorm
+                    let normalized: Double = max(0.0, min(1.0, baseline + beatSwell))
+
+                    let height: CGFloat = maxBarHeight * CGFloat(normalized * amp)
                     guard height > 0.5 else { continue }
-                    let barWidth = barSpacing * 0.5
+                    let barWidth: CGFloat = barSpacing * 0.5
                     let rect = CGRect(
                         x: x - barWidth / 2,
                         y: size.height - height,
