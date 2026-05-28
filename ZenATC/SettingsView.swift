@@ -325,7 +325,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 20)
         
 
-            ThemeCarousel(accent: themeManager.theme.foreground, interval: 3.0)
+            ThemeCarousel(accent: themeManager.theme.foreground, interval: 5.0)
         }
     }
 
@@ -443,6 +443,8 @@ private struct FilterRow: View {
             RoundedRectangle(cornerRadius: 18)
                 .fill(filter.isSelected ? accent : accent.opacity(0.08))
         )
+        .opacity(filter.isPro ? 0.70 : 1)
+        .allowsHitTesting(!filter.isPro)
     }
 }
 
@@ -512,6 +514,8 @@ private struct AudioPackRow: View {
             )
         }
         .buttonStyle(.plain)
+        .disabled(pack.isPro)
+        .opacity(pack.isPro ? 0.70 : 1)
     }
 }
 
@@ -628,9 +632,9 @@ private struct ThemeCarousel: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let cardWidth = proxy.size.width * 0.64
-            let cardHeight: CGFloat = 520
-            let spacing: CGFloat = 16
+            let cardWidth = proxy.size.width * 0.512
+            let cardHeight: CGFloat = 416
+            let spacing: CGFloat = 28
             let stride = cardWidth + spacing
             let totalWidth = stride * CGFloat(imageNames.count)
 
@@ -653,7 +657,7 @@ private struct ThemeCarousel: View {
                 }
             }
         }
-        .frame(height: 520)
+        .frame(height: 416)
     }
 }
 
