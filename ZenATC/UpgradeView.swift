@@ -8,12 +8,11 @@ import StoreKit
 
 struct UpgradeView: View {
     @Environment(ThemeManager.self) private var themeManager
-    let authManager: AuthManager
     let purchaseManager: PurchaseManager
     @Binding var showUpgrade: Bool
 
     @State private var selectedPlan = 1 // 0 = monthly, 1 = annual
-    @State private var showAuthPage = false
+    @State private var showConfirmPage = false
 
     private var accent: Color { themeManager.theme.foreground }
     private var bestValueGreen: Color { themeManager.theme.background }
@@ -33,12 +32,12 @@ struct UpgradeView: View {
                     mainPage
                         .frame(width: geo.size.width)
 
-                    authPage
+                    confirmPage
                         .frame(width: geo.size.width)
                 }
                 .frame(width: geo.size.width * 2, alignment: .leading)
-                .offset(x: showAuthPage ? -geo.size.width : 0)
-                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAuthPage)
+                .offset(x: showConfirmPage ? -geo.size.width : 0)
+                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showConfirmPage)
             }
         }
     }
@@ -203,7 +202,7 @@ struct UpgradeView: View {
     private var upgradeButton: some View {
         Button {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                showAuthPage = true
+                showConfirmPage = true
             }
         } label: {
             Text("Upgrade now")
@@ -245,17 +244,16 @@ struct UpgradeView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Auth Page
+    // MARK: - Confirm Page
 
-    private var authPage: some View {
-        AuthFlowPage(
+    private var confirmPage: some View {
+        ConfirmPurchasePage(
             themeManager: themeManager,
-            authManager: authManager,
             purchaseManager: purchaseManager,
             preselectedPlanIndex: selectedPlan,
             onBack: {
                 withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
-                    showAuthPage = false
+                    showConfirmPage = false
                 }
             },
             onDone: { showUpgrade = false }
@@ -263,23 +261,19 @@ struct UpgradeView: View {
     }
 }
 
-// MARK: - Auth Flow Page
+// MARK: - Confirm Purchase Page
 
-private struct AuthFlowPage: View {
+private struct ConfirmPurchasePage: View {
     let themeManager: ThemeManager
-    let authManager: AuthManager
     let purchaseManager: PurchaseManager
     var preselectedPlanIndex: Int = 1
     let onBack: () -> Void
     let onDone: () -> Void
 
-    @State private var email = ""
-    @State private var password = ""
     @State private var errorMessage: String?
     @State private var isLoading = false
 
     private var accent: Color { themeManager.theme.foreground }
-
     private var bg: Color { themeManager.theme.background }
     private var fg: Color { themeManager.theme.foreground }
 
@@ -291,11 +285,9 @@ private struct AuthFlowPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            authHeader
+            confirmHeader
 
-            if !authManager.isSignedIn {
-                signInContent
-            } else if !purchaseManager.isPro {
+            if !purchaseManager.isPro {
                 confirmContent
             } else {
                 proContent
@@ -311,9 +303,9 @@ private struct AuthFlowPage: View {
         }
     }
 
-    // MARK: - Auth Header
+    // MARK: - Header
 
-    private var authHeader: some View {
+    private var confirmHeader: some View {
         HStack(alignment: .center) {
             Button(action: onBack) {
                 HStack(spacing: 6) {
@@ -344,44 +336,6 @@ private struct AuthFlowPage: View {
         .padding(.bottom, 28)
     }
 
-    // MARK: - Sign In
-
-    private var signInContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("Log In")
-                .font(.system(size: 28, weight: .bold))
-                .foregroundStyle(accent)
-
-            Text("Sign in or create a new account")
-                .font(.system(size: 14))
-                .foregroundStyle(accent.opacity(0.6))
-                .padding(.top, 4)
-                .padding(.bottom, 28)
-
-            themedField("Email", text: $email)
-                .textContentType(.emailAddress)
-                .keyboardType(.emailAddress)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-
-            themedSecureField("Password", text: $password)
-                .padding(.top, 12)
-                .textContentType(.password)
-
-            if let error = errorMessage {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .padding(.top, 8)
-            }
-
-            actionButton("Log In", disabled: isLoading || email.isEmpty || password.isEmpty) {
-                Task { await logIn() }
-            }
-            .padding(.top, 24)
-        }
-    }
-
     // MARK: - Confirm Purchase
 
     private var confirmContent: some View {
@@ -389,11 +343,6 @@ private struct AuthFlowPage: View {
             Text("Confirm Plan")
                 .font(.system(size: 28, weight: .bold))
                 .foregroundStyle(accent)
-                .padding(.bottom, 4)
-
-            Text(authManager.userEmail ?? "")
-                .font(.system(size: 14))
-                .foregroundStyle(accent.opacity(0.6))
                 .padding(.bottom, 28)
 
             if let product = selectedProduct {
@@ -444,15 +393,10 @@ private struct AuthFlowPage: View {
                 .font(.system(size: 28, weight: .bold))
                 .foregroundStyle(accent)
 
-            Text(authManager.userEmail ?? "")
-                .font(.system(size: 14))
-                .foregroundStyle(accent.opacity(0.6))
-
             Button {
-                try? authManager.signOut()
                 onDone()
             } label: {
-                Text("Sign Out")
+                Text("Done")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(accent.opacity(0.55))
             }
@@ -464,34 +408,6 @@ private struct AuthFlowPage: View {
     }
 
     // MARK: - Helpers
-
-    private func themedField(_ placeholder: String, text: Binding<String>) -> some View {
-        TextField(placeholder, text: text)
-            .font(.system(size: 16))
-            .foregroundStyle(fg)
-            .tint(accent)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(fg.opacity(0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(fg.opacity(0.2), lineWidth: 1))
-            )
-    }
-
-    private func themedSecureField(_ placeholder: String, text: Binding<String>) -> some View {
-        SecureField(placeholder, text: text)
-            .font(.system(size: 16))
-            .foregroundStyle(fg)
-            .tint(accent)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(fg.opacity(0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(fg.opacity(0.2), lineWidth: 1))
-            )
-    }
 
     private func actionButton(_ title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -513,27 +429,6 @@ private struct AuthFlowPage: View {
         .disabled(disabled)
     }
 
-    private func logIn() async {
-        errorMessage = nil
-        isLoading = true
-        defer { isLoading = false }
-        do {
-            try await authManager.signIn(email: email, password: password)
-        } catch {
-            let code = (error as NSError).code
-            // 17011 = userNotFound — create the account instead
-            if code == 17011 {
-                do {
-                    try await authManager.createAccount(email: email, password: password)
-                } catch {
-                    errorMessage = error.localizedDescription
-                }
-            } else {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
     private func purchase(_ product: Product) async {
         errorMessage = nil
         isLoading = true
@@ -549,7 +444,6 @@ private struct AuthFlowPage: View {
 #Preview {
     @Previewable @State var show = true
     UpgradeView(
-        authManager: AuthManager(),
         purchaseManager: PurchaseManager(),
         showUpgrade: $show
     )

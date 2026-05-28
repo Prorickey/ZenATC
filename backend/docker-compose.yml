@@ -1,0 +1,10 @@
+services:
+  zenatc-backend:
+    image: docker.bedson.tech/tbedson/zenatc-backend
+    ports:
+      - "3303:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./audio:/app/audio
+    restart: unless-stopped

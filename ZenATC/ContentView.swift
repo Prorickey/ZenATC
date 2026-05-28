@@ -6,7 +6,6 @@
 import SwiftUI
 
 struct ContentView: View {
-    let authManager: AuthManager
     let purchaseManager: PurchaseManager
     @State private var audio = AudioManager()
     @State private var themeManager = ThemeManager()
@@ -83,7 +82,6 @@ struct ContentView: View {
             if showSettings {
                 SettingsView(
                     audio: audio,
-                    authManager: authManager,
                     purchaseManager: purchaseManager,
                     showSettings: $showSettings,
                     showUpgrade: $showUpgrade,
@@ -95,7 +93,6 @@ struct ContentView: View {
 
             if showUpgrade {
                 UpgradeView(
-                    authManager: authManager,
                     purchaseManager: purchaseManager,
                     showUpgrade: $showUpgrade
                 )
@@ -168,6 +165,7 @@ struct ContentView: View {
         .animation(.easeInOut(duration: 0.6), value: hasCompletedOnboarding)
         .sensoryFeedback(.impact(weight: .light), trigger: showTrackPicker)
         .sensoryFeedback(.impact(weight: .medium), trigger: audio.currentAirportIndex)
+        .task { await audio.preload() }
         .environment(themeManager)
     }
 }
@@ -1006,5 +1004,5 @@ private struct AudioWavesView: View {
 }
 
 #Preview {
-    ContentView(authManager: AuthManager(), purchaseManager: PurchaseManager())
+    ContentView(purchaseManager: PurchaseManager())
 }

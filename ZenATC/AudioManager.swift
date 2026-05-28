@@ -6,8 +6,7 @@
 import AVFoundation
 import Observation
 
-// Change to your Mac's LAN IP when testing on a physical device.
-private let backendBaseURL = "http://192.168.1.87:8080"
+let backendBaseURL = URL(string: "https://zenatc.bedson.tech")!
 
 // A single source previewed in isolation from the Settings screen.
 enum AudioPreview: Equatable {
@@ -18,13 +17,23 @@ enum AudioPreview: Equatable {
 @Observable
 final class AudioManager {
     var isPlaying = false {
-        didSet { isPlaying ? startPlayback() : pausePlayback() }
+        didSet {
+            guard !suppressObservers else { return }
+            isPlaying ? startPlayback() : pausePlayback()
+        }
     }
 
     // balance: 0 = full lofi (headphones), 1 = full ATC (airplane)
     var balance: Double = 0.5 {
-        didSet { updateVolumes() }
+        didSet {
+            guard !suppressObservers else { return }
+            updateVolumes()
+        }
     }
+
+    // Set while fade helpers mutate isPlaying/balance, so their didSet observers
+    // don't fight the manual volume fades.
+    private var suppressObservers = false
 
     var currentAirportIndex = 0
 
@@ -53,8 +62,12 @@ final class AudioManager {
 
     // ATC: local bundle file, loops natively via AVAudioPlayer
     private var atcPlayer: AVAudioPlayer?
-    // Lofi: HLS stream from Go backend via AVPlayer
+    // Lofi: VOD HLS stream — starts instantly, downloads ahead, loops from cache
     private var lofiPlayer: AVPlayer?
+    private var lofiItem: AVPlayerItem?
+    private var lofiLoopObserver: Any?
+    private var lofiFadeTimer: Timer?
+    private var cookieRefreshTask: Task<Void, Never>?
 
     // Settings preview — plays one source (a single lofi track OR ATC) on its own,
     // separate from the main mix. Exclusive: starting one stops any other.
@@ -63,12 +76,46 @@ final class AudioManager {
     private var previewATCPlayer: AVAudioPlayer?
 
     private let airports = Airport.all
+    private let attestationManager = AttestationManager(backendBaseURL: backendBaseURL)
+
+    // ~30 segments × ~150KB each ≈ 4.5MB — enough for 2 min of 4s HLS segments
+    private static let segmentCacheCapacity = 5 * 1024 * 1024
+    private static let forwardBufferSeconds: TimeInterval = 120
+    // The access cookie lives 5 min; refresh comfortably inside that window so
+    // segment fetches never hit an expired cookie mid-playback.
+    private static let cookieRefreshInterval: UInt64 = 240 * 1_000_000_000
 
     init() {
+        configureCacheLimit()
         configureSession()
     }
 
+    // Warms up the lofi stream (resolves the signed URL + access cookie via App
+    // Attest and builds the player) so the first play is instant. Does not start
+    // playback or the cookie-refresh loop — those begin when the user hits play.
+    @MainActor
+    func preload() async {
+        loadATC()
+
+        let streamURL = await resolveLofiURL(filename: selectedTrack.filename)
+        tearDownLofi()
+
+        lofiItem = AVPlayerItem(url: streamURL)
+        lofiItem?.preferredForwardBufferDuration = Self.forwardBufferSeconds
+        lofiPlayer = AVPlayer(playerItem: lofiItem)
+        lofiPlayer?.volume = 0
+        lofiPlayer?.automaticallyWaitsToMinimizeStalling = true
+        installLoopObserver()
+    }
+
     // MARK: - Private
+
+    private func configureCacheLimit() {
+        URLCache.shared = URLCache(
+            memoryCapacity: Self.segmentCacheCapacity,
+            diskCapacity: Self.segmentCacheCapacity
+        )
+    }
 
     private func configureSession() {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
@@ -77,15 +124,20 @@ final class AudioManager {
 
     private func startPlayback() {
         if atcPlayer == nil { loadATC() }
-        if lofiPlayer == nil { loadLofi() }
         updateVolumes()
         atcPlayer?.play()
-        lofiPlayer?.play()
+        if lofiPlayer == nil {
+            Task { await loadAndPlayLofi() }
+        } else {
+            lofiPlayer?.play()
+            startCookieRefresh(immediate: true)
+        }
     }
 
     private func pausePlayback() {
         atcPlayer?.pause()
         lofiPlayer?.pause()
+        stopCookieRefresh()
     }
 
     func reloadATC() {
@@ -99,13 +151,8 @@ final class AudioManager {
     }
 
     func reloadLofi() {
-        lofiPlayer?.pause()
-        lofiPlayer = nil
-        loadLofi()
-        if isPlaying {
-            updateVolumes()
-            lofiPlayer?.play()
-        }
+        tearDownLofi()
+        Task { await loadAndPlayLofi() }
     }
 
     private func loadATC() {
@@ -118,10 +165,85 @@ final class AudioManager {
         atcPlayer?.prepareToPlay()
     }
 
-    private func loadLofi() {
+    // Resolves the signed CDN URL via App Attest (which also sets the access
+    // cookie), builds the player, and starts playback + the cookie-refresh loop.
+    //
+    // Play-through behaviour:
+    //   Pass 1 — AVPlayer streams each 4-second segment from Cloudflare, buffering ahead.
+    //   Pass 2+ — segments are in the local URL cache; playback is fully offline.
+    @MainActor
+    private func loadAndPlayLofi() async {
+        let streamURL = await resolveLofiURL(filename: selectedTrack.filename)
+
+        // Tear down any previous state before creating new objects.
+        tearDownLofi()
+
+        lofiItem = AVPlayerItem(url: streamURL)
+        lofiItem?.preferredForwardBufferDuration = Self.forwardBufferSeconds
+        lofiPlayer = AVPlayer(playerItem: lofiItem)
+        installLoopObserver()
+
+        updateVolumes()
+        if isPlaying { lofiPlayer?.play() }
+        startCookieRefresh(immediate: false)
+    }
+
+    // VOD HLS doesn't loop natively — seek back to the start and replay on end.
+    private func installLoopObserver() {
+        lofiLoopObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: lofiItem,
+            queue: .main
+        ) { [weak self] _ in
+            self?.lofiPlayer?.seek(to: .zero)
+            if self?.isPlaying == true { self?.lofiPlayer?.play() }
+        }
+    }
+
+    private func tearDownLofi() {
+        stopCookieRefresh()
+        if let obs = lofiLoopObserver {
+            NotificationCenter.default.removeObserver(obs)
+            lofiLoopObserver = nil
+        }
+        lofiPlayer?.pause()
+        lofiPlayer = nil
+        lofiItem = nil
+        URLCache.shared.removeAllCachedResponses()
+    }
+
+    private func resolveLofiURL(filename: String) async -> URL {
+        do {
+            return try await attestationManager.requestStreamURL(for: filename)
+        } catch {
+            print("[AudioManager] attestation failed, using direct URL: \(error)")
+            return backendBaseURL.appendingPathComponent("hls/\(filename)/index.m3u8")
+        }
+    }
+
+    // MARK: - Access cookie refresh
+
+    // Keeps the short-lived /hls/ access cookie fresh while lofi is playing, so
+    // segment fetches never 403. Captures the manager (not self) to avoid a cycle.
+    private func startCookieRefresh(immediate: Bool) {
+        cookieRefreshTask?.cancel()
+        let manager = attestationManager
         let filename = selectedTrack.filename
-        guard let url = URL(string: "\(backendBaseURL)/radio/\(filename)/index.m3u8") else { return }
-        lofiPlayer = AVPlayer(url: url)
+        cookieRefreshTask = Task {
+            if immediate {
+                try? await manager.refreshStreamAccess(for: filename)
+            }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.cookieRefreshInterval)
+                if Task.isCancelled { break }
+                try? await manager.refreshStreamAccess(for: filename)
+            }
+        }
+    }
+
+    private func stopCookieRefresh() {
+        cookieRefreshTask?.cancel()
+        cookieRefreshTask = nil
     }
 
     // MARK: - Track selection
@@ -150,17 +272,26 @@ final class AudioManager {
     // MARK: - Settings preview
 
     /// Plays just the given track's lofi audio; tapping the active one again stops it.
+    /// Routes through App Attest so the gated /hls/ endpoint serves the preview.
     func toggleLofiPreview(trackID: UUID) {
         if activePreview == .lofi(trackID) { stopPreview(); return }
         stopPreview()
-        guard let track = allTracks.first(where: { $0.id == trackID }),
-              let url = URL(string: "\(backendBaseURL)/radio/\(track.filename)/index.m3u8")
-        else { return }
-        let player = AVPlayer(url: url)
-        player.volume = 1.0
-        player.play()
-        previewLofiPlayer = player
+        guard let track = allTracks.first(where: { $0.id == trackID }) else { return }
         activePreview = .lofi(trackID)
+        Task { @MainActor in
+            do {
+                let url = try await attestationManager.requestStreamURL(for: track.filename)
+                // The user may have toggled the preview off while we were fetching.
+                guard activePreview == .lofi(trackID) else { return }
+                let player = AVPlayer(url: url)
+                player.volume = 1.0
+                player.play()
+                previewLofiPlayer = player
+            } catch {
+                print("[AudioManager] preview attestation failed: \(error)")
+                if activePreview == .lofi(trackID) { activePreview = nil }
+            }
+        }
     }
 
     /// Plays just the ATC audio (regular, for the current airport); tapping again stops it.
@@ -191,6 +322,72 @@ final class AudioManager {
     private func updateVolumes() {
         atcPlayer?.volume = min(1.0, Float(balance) * 4.0) * fadeMultiplier
         lofiPlayer?.volume = Float(1.0 - balance) * fadeMultiplier
+    }
+
+    // MARK: - Fade
+
+    private static let fadeDuration: TimeInterval = 1.5
+    private static let fadeSteps = 30
+
+    // Starts both players muted and ramps them up to their mix targets.
+    func fadeInPlayback() {
+        let atcTarget = min(1.0, Float(balance) * 4.0)
+        let lofiTarget = Float(1.0 - balance)
+
+        atcPlayer?.volume = 0
+        lofiPlayer?.volume = 0
+
+        if atcPlayer == nil { loadATC() }
+        atcPlayer?.play()
+        if lofiPlayer == nil {
+            Task { await loadAndPlayLofi() }
+        } else {
+            lofiPlayer?.play()
+            startCookieRefresh(immediate: true)
+        }
+
+        suppressObservers = true
+        isPlaying = true
+        suppressObservers = false
+
+        atcPlayer?.setVolume(atcTarget, fadeDuration: Self.fadeDuration)
+        fadeLofiVolume(to: lofiTarget)
+    }
+
+    // Smoothly crossfades the mix to a new balance instead of snapping volumes.
+    func fadeToBalance(_ newBalance: Double) {
+        suppressObservers = true
+        balance = newBalance
+        suppressObservers = false
+
+        let atcTarget = min(1.0, Float(newBalance) * 4.0)
+        let lofiTarget = Float(1.0 - newBalance)
+
+        atcPlayer?.setVolume(atcTarget, fadeDuration: Self.fadeDuration)
+        fadeLofiVolume(to: lofiTarget)
+    }
+
+    // AVPlayer has no built-in volume ramp, so step it manually on a timer.
+    private func fadeLofiVolume(to target: Float) {
+        lofiFadeTimer?.invalidate()
+
+        guard let player = lofiPlayer else { return }
+
+        let startVolume = player.volume
+        let interval = Self.fadeDuration / Double(Self.fadeSteps)
+        let delta = (target - startVolume) / Float(Self.fadeSteps)
+        var step = 0
+
+        lofiFadeTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] timer in
+            step += 1
+            if step >= Self.fadeSteps {
+                player.volume = target
+                timer.invalidate()
+                self?.lofiFadeTimer = nil
+            } else {
+                player.volume = startVolume + delta * Float(step)
+            }
+        }
     }
 
     // MARK: - Sleep timer
