@@ -763,8 +763,8 @@ private struct MixerSliderView: View {
             .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
         }
         .frame(height: 36 * 1.5)
-        .sensoryFeedback(.impact(weight: .light, intensity: 0.4), trigger: Int(balance * 10))
-        .sensoryFeedback(.impact(weight: .light, intensity: 0.4), trigger: isDragging) { _, newValue in
+        .sensoryFeedback(.impact(weight: .light, intensity: 0.6), trigger: Int(balance * 10))
+        .sensoryFeedback(.impact(weight: .light, intensity: 0.6), trigger: isDragging) { _, newValue in
             newValue
         }
     }
