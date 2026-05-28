@@ -88,6 +88,20 @@ extension UIFont {
             ?? UIFont.systemFont(ofSize: size, weight: .black)
     }
 
+    // ABC Schengen Core Variable — sets the standard 'wght' axis (500 = Medium).
+    static func schengen(size: CGFloat, weight: Double = 500) -> UIFont {
+        let postScriptName = "ABCSchengenCoreVariableUnlicensedTrial-Regular"
+        guard let base = UIFont(name: postScriptName, size: size) else {
+            return UIFont.systemFont(ofSize: size, weight: .medium)
+        }
+        // 'wght' = 2003265652
+        let variations: [Int: Double] = [2003265652: weight]
+        let descriptor = base.fontDescriptor.addingAttributes([
+            UIFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): variations
+        ])
+        return UIFont(descriptor: descriptor, size: size)
+    }
+
     // ABC Gravity Cyrillic Upright Variable — weight 900, variable width axis 50..150.
     // PostScript name carries the trial-edition suffix.
     static func abcGravity(size: CGFloat, width: Double = 50) -> UIFont {
@@ -119,6 +133,10 @@ extension Font {
 
     static func schengenCore(size: CGFloat) -> Font {
         Font.custom("ABCSchengenCoreVariable-Trial", size: size)
+    }
+
+    static func schengen(size: CGFloat, weight: Double = 500) -> Font {
+        Font(UIFont.schengen(size: size, weight: weight))
     }
 
     static func abcGravity(size: CGFloat, width: Double = 50) -> Font {

@@ -235,9 +235,13 @@ struct SettingsView: View {
     private var airportCard: some View {
         VStack(spacing: 8) {
             Text("50")
-                .font(.gtStandardAirport(size: 150))
-                .fontWeight(.bold)
+                .font(.schengen(size: 140, weight: 500))
+                .kerning(0)
+                .multilineTextAlignment(.center)
                 .foregroundStyle(themeManager.theme.foreground)
+                // line-height 76% + leading-trim CAP_HEIGHT — SwiftUI has no direct
+                // leading-trim, so a tightened line box approximates the cap-height fit.
+                .frame(height: 150.3 * 0.76)
 
             HStack(spacing: 6) {
                 Text("PRO")
