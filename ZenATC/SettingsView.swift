@@ -386,22 +386,42 @@ private struct FilterOption: Identifiable {
     let isSelected: Bool
 }
 
+private struct ShakeEffect: GeometryEffect {
+    var travel: CGFloat = 4
+    var shakesPerUnit: CGFloat = 2
+    var animatableData: CGFloat
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let dx = travel * sin(animatableData * .pi * 2 * shakesPerUnit)
+        return ProjectionTransform(CGAffineTransform(translationX: dx, y: 0))
+    }
+}
+
 private struct FilterRow: View {
     @Environment(ThemeManager.self) private var themeManager
     let filter: FilterOption
     let accent: Color
+    @State private var shake: CGFloat = 0
 
     var body: some View {
         let background = themeManager.theme.background
         HStack(spacing: 14) {
-            // Radio indicator
-            Circle()
-                .strokeBorder(
-                    filter.isSelected ? background : accent.opacity(0.3),
-                    lineWidth: filter.isSelected ? 2 : 1.5
-                )
-                .background(Circle().fill(filter.isSelected ? Color.clear : accent.opacity(0.12)))
-                .frame(width: filter.isSelected ? 28 : 22, height: filter.isSelected ? 28 : 22)
+            // Selection indicator — lock for PRO, radio otherwise
+            if filter.isPro {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(accent)
+                    .frame(width: 22, height: 22)
+                    .modifier(ShakeEffect(animatableData: shake))
+            } else {
+                Circle()
+                    .strokeBorder(
+                        filter.isSelected ? background : accent.opacity(0.3),
+                        lineWidth: filter.isSelected ? 2 : 1.5
+                    )
+                    .background(Circle().fill(filter.isSelected ? Color.clear : accent.opacity(0.12)))
+                    .frame(width: filter.isSelected ? 28 : 22, height: filter.isSelected ? 28 : 22)
+            }
 
             // Labels
             VStack(alignment: .leading, spacing: 3) {
@@ -443,8 +463,12 @@ private struct FilterRow: View {
             RoundedRectangle(cornerRadius: 18)
                 .fill(filter.isSelected ? accent : accent.opacity(0.08))
         )
-        .opacity(filter.isPro ? 0.70 : 1)
-        .allowsHitTesting(!filter.isPro)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard filter.isPro else { return }
+            withAnimation(.linear(duration: 0.4)) { shake += 1 }
+        }
+        .sensoryFeedback(.warning, trigger: shake)
     }
 }
 
@@ -461,18 +485,33 @@ private struct AudioPackRow: View {
     let accent: Color
     let isSelected: Bool
     let onTap: () -> Void
+    @State private var shake: CGFloat = 0
 
     var body: some View {
         let background = themeManager.theme.background
-        Button(action: onTap) {
+        Button {
+            if pack.isPro {
+                withAnimation(.linear(duration: 0.4)) { shake += 1 }
+            } else {
+                onTap()
+            }
+        } label: {
             HStack(spacing: 12) {
-                Circle()
-                    .strokeBorder(
-                        isSelected ? background : accent.opacity(0.4),
-                        lineWidth: isSelected ? 2 : 1
-                    )
-                    .background(Circle().fill(isSelected ? Color.clear : accent.opacity(0.12)))
-                    .frame(width: 22, height: 22)
+                if pack.isPro {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(accent)
+                        .frame(width: 22, height: 22)
+                        .modifier(ShakeEffect(animatableData: shake))
+                } else {
+                    Circle()
+                        .strokeBorder(
+                            isSelected ? background : accent.opacity(0.4),
+                            lineWidth: isSelected ? 2 : 1
+                        )
+                        .background(Circle().fill(isSelected ? Color.clear : accent.opacity(0.12)))
+                        .frame(width: 22, height: 22)
+                }
 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
@@ -514,8 +553,7 @@ private struct AudioPackRow: View {
             )
         }
         .buttonStyle(.plain)
-        .disabled(pack.isPro)
-        .opacity(pack.isPro ? 0.70 : 1)
+        .sensoryFeedback(.warning, trigger: shake)
     }
 }
 
@@ -563,6 +601,8 @@ private struct PremiumAudioCard: View {
     let accent: Color
 
     var body: some View {
+        // Lifts the retinted art since colorMultiply darkens mid-tones. 0 = no lift, ~0.3 = much brighter.
+        let artBrightness = 0.18
         ZStack(alignment: .topLeading) {
             // Card background
             RoundedRectangle(cornerRadius: 20)
@@ -593,18 +633,23 @@ private struct PremiumAudioCard: View {
                 .padding(.bottom, 12)
 
                 // Image area
+                // Art ships with orange baked in; grayscale + colorMultiply retints it
+                // to the active theme's accent while preserving the original shading.
                 ZStack {
-                    // Spirals use multiply blend to knock out white on card bg
                     VStack(spacing: 120) {
                         Image("spiral_top")
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .blendMode(.multiply)
+                            .grayscale(1)
+                            .colorMultiply(accent)
+                            .brightness(artBrightness)
 
                         Image("spiral_bottom")
                             .resizable()
                             .aspectRatio(contentMode: .fit)
-                            .blendMode(.multiply)
+                            .grayscale(1)
+                            .colorMultiply(accent)
+                            .brightness(artBrightness)
                     }
                     .padding(.horizontal, 4)
 
@@ -613,6 +658,9 @@ private struct PremiumAudioCard: View {
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 200)
+                        .grayscale(1)
+                        .colorMultiply(accent)
+                        .brightness(artBrightness)
                 }
                 .padding(.bottom, 8)
             }
