@@ -31,6 +31,7 @@ struct ZenATCApp: App {
 enum FontLoader {
     static func registerAll() {
         registerFont(assetName: "ABCSchengenCoreVariable-Trial", fileName: "ABCSchengenCoreVariable-Trial")
+        registerFont(assetName: "ABCGravityCyrillicUprightVariable-Trial", fileName: "ABCGravityCyrillicUprightVariable-Trial")
         registerFont(assetName: "GT-Standard-Trial-VF", fileName: "GT-Standard-Trial-VF")
     }
 

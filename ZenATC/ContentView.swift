@@ -29,10 +29,16 @@ struct ContentView: View {
         ZStack(alignment: .top) {
             themeManager.theme.background.ignoresSafeArea()
 
-            AudioWavesView(amplitude: 1 - audio.balance)
-                .frame(height: 80)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .allowsHitTesting(false)
+            ZStack {
+                AudioWavesView(amplitude: 1 - audio.balance, seed: audio.selectedTrackIndex)
+                    .id(audio.selectedTrackIndex)
+                    .transition(.opacity)
+            }
+            .frame(height: 136)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .ignoresSafeArea(.container, edges: .bottom)
+            .allowsHitTesting(false)
+            .animation(.easeInOut(duration: 0.5), value: audio.selectedTrackIndex)
 
             VStack(spacing: 0) {
                 TopBarView(showSettings: $showSettings, showAirports: $showAirports, isPlaying: $audio.isPlaying)
@@ -298,7 +304,7 @@ private struct AnimatedStatusText: View {
         HStack(spacing: 0) {
             ForEach(letters.indices, id: \.self) { index in
                 Text(String(letters[index]))
-                    .font(.airportCode(size: 20))
+                    .font(.gtStandardAirport(size: 20))
                     .fontWeight(.heavy)
                     .foregroundStyle(color)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -413,11 +419,11 @@ private struct AirportPageView: View {
 
     // ── Tune default letter size here ──────────────────────────────────────
     private let defaultWidthFraction: CGFloat  = 1   // fraction of container width
-    private let defaultHeightFraction: CGFloat = 0.96
+    private let defaultHeightFraction: CGFloat = 0.80
     // fraction of container height
     // ───────────────────────────────────────────────────────────────────────
 
-    private let referenceCapHeight: CGFloat = UIFont.abcGravity(size: 200).capHeight
+    private let referenceCapHeight: CGFloat = UIFont.abcGravity(size: 600).capHeight
 
     var body: some View {
         GeometryReader { geo in
@@ -431,10 +437,10 @@ private struct AirportPageView: View {
             let stretchDelta = naturalTextHeight > 0 ? clampedDragY / naturalTextHeight : 0
             let finalScaleY = max(baseScaleY * 0.800, baseScaleY + stretchDelta)
             // posY uses referenceCapHeight (visible glyph) so the cap's top stays pinned.
-            let posY = geo.size.height / 2 + referenceCapHeight * (finalScaleY - baseScaleY) / 2
+            let posY = geo.size.height / 2 + referenceCapHeight * (finalScaleY - baseScaleY) / 2 + geo.size.height * 0.10
 
             Text(airport.code.uppercased())
-                .font(.airportCode(size: 200))
+                .font(.airportCode(size: 600))
                 .kerning(0)
                 .lineLimit(1)
                 .fixedSize()
@@ -481,7 +487,7 @@ private struct BottomControlsView: View {
                 PlayPauseButton(isPlaying: $isPlaying)
                     .padding(.top, 16)
             }
-            .offset(y: showTrackPicker ? -80 : 25)
+            .offset(y: showTrackPicker ? -80 : 5)
             .animation(Self.pickerSpring, value: showTrackPicker)
 
             ZStack {
@@ -509,7 +515,7 @@ private struct BottomControlsView: View {
                     }
                 } label: {
                     Text(tracks[selectedTrackIndex].name)
-                        .font(.airportCode(size: 34.77))
+                        .font(.gtStandardAirport(size: 34.77))
                         .fontWeight(.heavy)
                         .kerning(0)
                         .multilineTextAlignment(.center)
@@ -563,7 +569,7 @@ private struct InlineTrackPicker: View {
                     let isSelected = pos == selectedIndex
 
                     Text(tracks[pos].name)
-                        .font(.airportCode(size: isSelected ? 34.77 : size))
+                        .font(.gtStandardAirport(size: isSelected ? 34.77 : size))
                         .fontWeight(.heavy)
                         .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
                         .lineLimit(1)
@@ -798,10 +804,12 @@ private struct PlayPauseButton: View {
 
 private struct AudioWavesView: View {
     let amplitude: Double   // 0..1, scales bar height
+    let seed: Int           // varies per song; produces a unique irregular pattern
     @Environment(ThemeManager.self) private var themeManager
 
     var body: some View {
         let color = themeManager.theme.foreground
+        let s = seed
         TimelineView(.animation) { context in
             Canvas { ctx, size in
                 let t = context.date.timeIntervalSinceReferenceDate
@@ -809,17 +817,26 @@ private struct AudioWavesView: View {
                 let barSpacing = size.width / CGFloat(barCount)
                 let maxBarHeight = size.height
 
+                // Per-song wave-shape parameters (constant across bars)
+                let f1 = 1.2 + AudioWavesView.rand(s &* 7  &+ 1) * 0.6
+                let f2 = 0.5 + AudioWavesView.rand(s &* 11 &+ 2) * 0.4
+                let f3 = 2.4 + AudioWavesView.rand(s &* 13 &+ 3) * 0.8
+                let phaseOffset = AudioWavesView.rand(s) * .pi * 2
+
                 for i in 0..<barCount {
                     let x = CGFloat(i) * barSpacing + barSpacing / 2
+                    let phase = Double(i) / Double(barCount) * .pi * 2
 
-                    // Layered sines for an organic, scrolling waveform
-                    let v1 = sin(Double(i) * 0.40 + t * 2.5)
-                    let v2 = sin(Double(i) * 0.85 - t * 1.7)
-                    let v3 = sin(Double(i) * 0.20 + t * 4.0)
-                    let combined = (v1 + v2 * 0.5 + v3 * 0.3) / 1.8     // -1..1
-                    let normalized = (combined + 1) / 2                  //  0..1
+                    // Three traveling waves — neighbouring bars share phase, so the
+                    // overall envelope looks like a smooth wave moving across.
+                    let v = sin(phase * f1 + t * 0.9 + phaseOffset)
+                          + sin(phase * f2 - t * 0.5 + phaseOffset * 0.7) * 0.65
+                          + sin(phase * f3 + t * 1.4 + phaseOffset * 1.3) * 0.35
 
-                    let height = max(2, normalized * maxBarHeight * CGFloat(amplitude))
+                    let normalized = max(0, min(1, (v + 2.0) / 4.0))
+
+                    let height = normalized * maxBarHeight * CGFloat(amplitude)
+                    guard height > 0.5 else { continue }
                     let barWidth = barSpacing * 0.5
                     let rect = CGRect(
                         x: x - barWidth / 2,
@@ -832,6 +849,15 @@ private struct AudioWavesView: View {
                 }
             }
         }
+    }
+
+    /// Stable pseudo-random in 0..1 from an Int key (xor-shift on a Knuth-multiplied seed).
+    private static func rand(_ n: Int) -> Double {
+        var x = UInt32(truncatingIfNeeded: n &* 2654435761)
+        x ^= x &<< 13
+        x ^= x &>> 17
+        x ^= x &<< 5
+        return Double(x) / Double(UInt32.max)
     }
 }
 

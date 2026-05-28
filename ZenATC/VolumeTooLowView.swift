@@ -49,14 +49,14 @@ struct VolumeTooLowView: View {
                 .padding(.bottom, 14)
 
                 Text("Your\nvolume's\ntoo low")
-                    .font(.abcGravity(size: 64))
+                    .font(.gtStandardAirport(size: 20))
+                    .fontWeight(.bold)
                     .foregroundStyle(themeManager.theme.foreground)
                     .multilineTextAlignment(.center)
-                    .lineSpacing(-30)
 
                 Text("This app is a listening app")
-                    .font(.airportCode(size: 18))
-                    .fontWeight(.regular)
+                    .font(.gtStandardAirport(size: 18))
+                    .fontWeight(.bold)
                     .foregroundStyle(themeManager.theme.foreground)
                     .padding(.top, 14)
 
@@ -78,4 +78,9 @@ struct VolumeTooLowView: View {
         }
         .contentShape(Rectangle())
     }
+}
+
+#Preview {
+    VolumeTooLowView(onContinue: {})
+        .environment(ThemeManager())
 }
