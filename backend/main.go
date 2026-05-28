@@ -60,7 +60,7 @@ func main() {
 	// Step 1 and 2 only happen once per install because contacting
 	// apple's servers gets throttled
 
-	// Step 1: Get the attestation challenge 
+	// Step 1: Get the attestation challenge
 	router.GET("/challenge", attestationChallengeHandler)
 
 	// Step 2: Send the attestation object, key and other stuff to server

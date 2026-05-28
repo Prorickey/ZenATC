@@ -17,6 +17,7 @@ backend/live/
 # Secrets
 .env
 backend/.env
+backend/secrets/
 
 # Audio source files — copy to backend/audio/ manually on the server before deploying.
 # Required files: lofi_energy.mp3, lofi_late_night.mp3, lofi_rainy_day.mp3, lofi_work_flow.mp3

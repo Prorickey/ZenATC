@@ -25,15 +25,13 @@ func initDB() {
 		log.Fatalf("[db] failed to open SQLite database at %q: %v", path, err)
 	}
 
-	// SQLite is single-writer; a single connection avoids "database is locked"
-	// errors and keeps the read-check-write counter update serialized.
+	// SQLite is single-writer; a single connection avoids "database is locked" errors.
 	conn.SetMaxOpenConns(1)
 
 	if _, err := conn.Exec(`
 		CREATE TABLE IF NOT EXISTS attested_keys (
 			key_id     TEXT PRIMARY KEY,
-			public_key BLOB NOT NULL,
-			counter    INTEGER NOT NULL
+			public_key BLOB NOT NULL
 		)`); err != nil {
 		log.Fatalf("[db] failed to create attested_keys table: %v", err)
 	}

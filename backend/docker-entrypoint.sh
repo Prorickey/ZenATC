@@ -16,7 +16,10 @@ generate_secret() {
 }
 
 generate_secret CHALLENGE_SIGNING_SECRET
-generate_secret CLOUDFLARE_URL_SIGNING_SECRET
+# A random 32-byte seed is a valid Ed25519 key, so this lets the backend start in
+# dev without config. In production it MUST be injected to match the Worker's
+# public key (a random per-restart key would make the Worker reject every URL).
+generate_secret CLOUDFLARE_URL_SIGNING_PRIVATE_KEY
 
 # ── HLS generation ───────────────────────────────────────────────────────────
 # Slice each MP3 into 4-second VOD segments on first start.

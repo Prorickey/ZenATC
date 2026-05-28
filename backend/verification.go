@@ -13,7 +13,6 @@ import (
 	"log"
 	"os"
 	"regexp"
-	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/golang-jwt/jwt/v5"
@@ -59,9 +58,6 @@ func initVerification() {
 	log.Printf("[attest] App ID: %s", appleAppID)
 }
 
-// streamURLTTL is how long a signed CDN URL remains valid.
-const streamURLTTL = 3 * time.Minute
-
 // validStreamID rejects path traversal and enforces a known-safe character set.
 var validStreamID = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$`)
 
@@ -75,74 +71,78 @@ type verifyRequest struct {
 
 // MARK: - Orchestration
 
-// verifyAttestation runs all Phase 3 checks and returns the EC public key from
-// the credential certificate and the raw authenticatorData.
-// Both values are needed by attestKeyHandler to register the key for future assertions.
-func verifyAttestation(challengeToken string, attestationBytes []byte) (*ecdsa.PublicKey, []byte, error) {
+// verifyAttestation runs all checks for the one-time attestation flow. The
+// attestation's clientDataHash commits to SHA256(challenge || boundPublicKey),
+// binding Apple's hardware attestation to the app-generated signing key whose
+// raw public bytes are boundPublicKey. A nil return means Apple vouches for a
+// genuine Secure Enclave device that answered our challenge and committed to
+// this exact signing key — which we then trust for all future requests.
+func verifyAttestation(challengeToken string, attestationBytes, boundPublicKey []byte) error {
 	// ── Step 1: Verify the stateless challenge token ──────────────────────────
 	challenge, err := verifyAndExtractChallenge(challengeToken)
 	if err != nil {
-		return nil, nil, fmt.Errorf("challenge token invalid: %w", err)
+		return fmt.Errorf("challenge token invalid: %w", err)
 	}
 
 	// ── Step 2: CBOR-decode the Apple attestation object ─────────────────────
 	var attest attestationObject
 	if err := cbor.Unmarshal(attestationBytes, &attest); err != nil {
-		return nil, nil, fmt.Errorf("CBOR decode failed: %w", err)
+		return fmt.Errorf("CBOR decode failed: %w", err)
 	}
 	if attest.Format != "apple-appattest" {
-		return nil, nil, fmt.Errorf("unexpected attestation format %q", attest.Format)
+		return fmt.Errorf("unexpected attestation format %q", attest.Format)
 	}
 	if len(attest.AttStmt.X5C) < 2 {
-		return nil, nil, errors.New("x5c must contain at least 2 certificates")
+		return errors.New("x5c must contain at least 2 certificates")
 	}
 
 	// ── Step 3: Parse the certificate chain ──────────────────────────────────
 	credCert, err := x509.ParseCertificate(attest.AttStmt.X5C[0])
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse credential certificate: %w", err)
+		return fmt.Errorf("failed to parse credential certificate: %w", err)
 	}
 	intermediateCert, err := x509.ParseCertificate(attest.AttStmt.X5C[1])
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to parse intermediate certificate: %w", err)
+		return fmt.Errorf("failed to parse intermediate certificate: %w", err)
 	}
 
 	// ── Step 4: Verify the chain against Apple's root CA ─────────────────────
 	if err := verifyCertChain(credCert, intermediateCert); err != nil {
-		return nil, nil, fmt.Errorf("certificate chain invalid: %w", err)
+		return fmt.Errorf("certificate chain invalid: %w", err)
 	}
 
 	// ── Step 5: Verify the nonce embedded in the credential certificate ───────
-	// nonce = SHA256(authData || SHA256(challenge))
-	clientDataHash := sha256.Sum256([]byte(challenge))
+	// nonce = SHA256(authData || SHA256(challenge || boundPublicKey)). Folding the
+	// app's signing key into clientDataHash is what lets every later request be
+	// authenticated by that key alone, with no further Apple contact.
+	clientData := make([]byte, 0, len(challenge)+len(boundPublicKey))
+	clientData = append(clientData, []byte(challenge)...)
+	clientData = append(clientData, boundPublicKey...)
+	clientDataHash := sha256.Sum256(clientData)
 	composite := make([]byte, 0, len(attest.AuthData)+sha256.Size)
 	composite = append(composite, attest.AuthData...)
 	composite = append(composite, clientDataHash[:]...)
 	expectedNonce := sha256.Sum256(composite)
 	if err := verifyCertNonce(credCert, expectedNonce[:]); err != nil {
-		return nil, nil, fmt.Errorf("challenge integrity check failed: %w", err)
+		return fmt.Errorf("challenge/key binding check failed: %w", err)
 	}
 
 	// ── Step 6: Verify the RP ID matches our App ID ───────────────────────────
 	if err := verifyRPIDHash(attest.AuthData); err != nil {
-		return nil, nil, fmt.Errorf("app identity check failed: %w", err)
+		return fmt.Errorf("app identity check failed: %w", err)
 	}
 
 	// ── Step 7: Verify the AAGUID identifies a genuine App Attest device ──────
 	if err := verifyAAGUID(attest.AuthData); err != nil {
-		return nil, nil, fmt.Errorf("device identity check failed: %w", err)
+		return fmt.Errorf("device identity check failed: %w", err)
 	}
 
 	// ── Step 8: Verify credential ID equals the public key hash ───────────────
 	if err := verifyCredentialID(credCert, attest.AuthData); err != nil {
-		return nil, nil, fmt.Errorf("credential ID mismatch: %w", err)
+		return fmt.Errorf("credential ID mismatch: %w", err)
 	}
 
-	ecPub, ok := credCert.PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, nil, errors.New("credential certificate does not use an EC public key")
-	}
-	return ecPub, attest.AuthData, nil
+	return nil
 }
 
 // MARK: - CBOR structures

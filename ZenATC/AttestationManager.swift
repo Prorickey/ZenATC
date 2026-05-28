@@ -7,12 +7,17 @@ import CryptoKit
 import DeviceCheck
 import Foundation
 import Observation
+import Security
 
 enum AttestationError: LocalizedError {
     case unsupported
     case challengeFetchFailed(Error)
     case invalidChallengeToken
     case keyGenerationFailed(Error)
+    case signingKeyCreationFailed(Error)
+    case signingKeyUnavailable
+    case signingFailed(Error)
+    case keychainFailure(OSStatus)
     case attestationFailed(Error)
     case verificationRejected
     case keyNotFound
@@ -29,12 +34,20 @@ enum AttestationError: LocalizedError {
             return "Backend returned an unreadable challenge token."
         case .keyGenerationFailed(let e):
             return "Could not generate attestation key: \(e.localizedDescription)"
+        case .signingKeyCreationFailed(let e):
+            return "Could not create signing key: \(e.localizedDescription)"
+        case .signingKeyUnavailable:
+            return "Local signing key is missing — re-registering."
+        case .signingFailed(let e):
+            return "Failed to sign request: \(e.localizedDescription)"
+        case .keychainFailure(let status):
+            return "Keychain error (status \(status))."
         case .attestationFailed(let e):
             return "Apple attestation failed: \(e.localizedDescription)"
         case .verificationRejected:
             return "Backend rejected the attestation."
         case .keyNotFound:
-            return "Attestation key not found on server — re-registering."
+            return "Signing key not found on server — re-registering."
         case .networkError(let e):
             return "Network error: \(e.localizedDescription)"
         case .invalidStreamURL:
@@ -43,18 +56,13 @@ enum AttestationError: LocalizedError {
     }
 }
 
-private struct AttestationPayload {
-    let keyID: String
-    let challengeToken: String
-    let attestationObject: Data
-}
-
 @Observable
 final class AttestationManager {
     let backendBaseURL: URL
 
-    private static let keyIDDefaultsKey        = "tech.bedson.zenatc.attestation.keyID"
+    private static let keyIDDefaultsKey         = "tech.bedson.zenatc.attestation.keyID"
     private static let keyRegisteredDefaultsKey = "tech.bedson.zenatc.attestation.keyRegistered"
+    private static let signingKeyTag            = "tech.bedson.zenatc.requestSigningKey"
 
     init(backendBaseURL: URL) {
         self.backendBaseURL = backendBaseURL
@@ -64,33 +72,36 @@ final class AttestationManager {
 
     // Returns a short-lived signed CDN URL for the given stream ID.
     //
-    // First call ever: runs full Apple attestation (contacts Apple servers once to
-    // register the key), then uses the cheaper assertion path to get the URL.
-    // Subsequent calls skip attestation entirely and only use assertions.
-    //
-    // If the server loses the key (e.g. restart), the assertion endpoint returns 404
-    // and this method automatically re-registers before retrying.
+    // First call ever (or after the local/server key is lost): runs the one-time
+    // attestation, which contacts Apple once to attest an App Attest key whose
+    // attestation binds a second, app-generated Secure Enclave signing key.
+    // Every subsequent call asserts the request by signing with that second key —
+    // no Apple contact and no `generateAssertion`.
     func requestStreamURL(for streamID: String) async throws -> URL {
         let service = DCAppAttestService.shared
         guard service.isSupported else { throw AttestationError.unsupported }
 
-        var keyID = try await resolvedKeyID(service: service)
-
         if !UserDefaults.standard.bool(forKey: Self.keyRegisteredDefaultsKey) {
-            try await attestAndRegister(keyID: keyID, service: service)
-            keyID = try await resolvedKeyID(service: service)
+            try await attestAndRegister(service: service)
         }
 
         do {
-            return try await assertStreamURL(for: streamID, keyID: keyID)
-        } catch AttestationError.keyNotFound {
-            clearRegistered()
-            try await attestAndRegister(keyID: keyID, service: service)
-            keyID = try await resolvedKeyID(service: service)
-            return try await assertStreamURL(for: streamID, keyID: keyID)
+            return try await assertStreamURL(for: streamID)
+        } catch AttestationError.keyNotFound, AttestationError.signingKeyUnavailable {
+            clearRegistration()
+            try await attestAndRegister(service: service)
+            return try await assertStreamURL(for: streamID)
         }
     }
-    
+
+    // Re-runs the assertion to refresh the short-lived access cookie during
+    // playback. The new Set-Cookie lands in the shared cookie store, so AVPlayer's
+    // ongoing segment requests pick it up without recreating the player. The
+    // returned URL is unused — only the cookie side effect matters.
+    func refreshStreamAccess(for streamID: String) async throws {
+        _ = try await requestStreamURL(for: streamID)
+    }
+
     // MARK: - Challenge fetch
 
     private func fetchChallengeToken() async throws -> String {
@@ -103,21 +114,47 @@ final class AttestationManager {
         }
     }
 
-    // MARK: - Attestation
+    // MARK: - Attestation (one-time)
 
-    // Runs the full Apple attestation flow and registers the public key with the backend.
-    // After this succeeds, generateAssertion can be used for all future requests.
-    private func attestAndRegister(keyID: String, service: DCAppAttestService) async throws {
-        let payload = try await buildPayload(keyID: keyID, service: service)
+    // Creates the app-generated signing key, attests an App Attest key whose
+    // clientDataHash commits to SHA256(challenge || signingPublicKey), and
+    // registers the signing public key with the backend. After this, Apple is
+    // out of the loop forever and all requests use the assertion path.
+    private func attestAndRegister(service: DCAppAttestService) async throws {
+        let token = try await fetchChallengeToken()
+        let challenge = try decodeChallenge(from: token)
+
+        // Second key — a general-purpose Secure Enclave signing key. The private
+        // half never leaves the enclave; we persist only the opaque wrapped blob.
+        let signingKey = try makeSigningKey()
+        let publicKeyData = signingKey.publicKey.rawRepresentation
+        try Keychain.save(signingKey.dataRepresentation, tag: Self.signingKeyTag)
+
+        let keyID = try await generateAttestKey(service: service)
+
+        // The binding: commit the signing key's public bytes into clientDataHash.
+        // The backend recomputes this exact construction and confirms it equals
+        // the nonce inside Apple's attestation.
+        var clientData = Data(challenge.utf8)
+        clientData.append(publicKeyData)
+        let clientDataHash = Data(SHA256.hash(data: clientData))
+
+        let attestation: Data
+        do {
+            attestation = try await service.attestKey(keyID, clientDataHash: clientDataHash)
+        } catch {
+            throw AttestationError.attestationFailed(error)
+        }
 
         let endpoint = backendBaseURL.appendingPathComponent("attest-key")
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(AttestKeyRequest(
-            challengeToken: payload.challengeToken,
-            keyID: payload.keyID,
-            attestationObject: payload.attestationObject.base64EncodedString()
+            challengeToken: token,
+            keyID: keyID,
+            attestationObject: attestation.base64EncodedString(),
+            publicKey: publicKeyData.base64EncodedString()
         ))
 
         let response: URLResponse
@@ -134,46 +171,29 @@ final class AttestationManager {
         markRegistered()
     }
 
-    // Builds a payload of the key ID, challenge token, and attestation object by hashing the challenge and attesting
-    // with apples servers.
-    private func buildPayload(keyID: String, service: DCAppAttestService) async throws -> AttestationPayload {
-        let token = try await fetchChallengeToken()
-        let challenge = try decodeChallenge(from: token)
-        let clientDataHash = Data(SHA256.hash(data: Data(challenge.utf8)))
-
-        var activeKeyID = keyID
-        let attestation: Data
-        do {
-            attestation = try await service.attestKey(activeKeyID, clientDataHash: clientDataHash)
-        } catch {
-            clearStoredKeyID()
-            clearRegistered()
-            activeKeyID = try await generateAndStoreKey(service: service)
-            do {
-                attestation = try await service.attestKey(activeKeyID, clientDataHash: clientDataHash)
-            } catch let retryError {
-                throw AttestationError.attestationFailed(retryError)
-            }
-        }
-
-        return AttestationPayload(keyID: activeKeyID, challengeToken: token, attestationObject: attestation)
-    }
-
     // MARK: - Assertion
 
-    // Generates a lightweight App Attest assertion (no Apple server contact)
-    // and exchanges it for a signed CDN URL.
-    private func assertStreamURL(for streamID: String, keyID: String) async throws -> URL {
+    // Asserts a request by signing (streamID || challenge) with the registered
+    // Secure Enclave signing key, then exchanges the signature for a signed CDN
+    // URL. No Apple contact.
+    private func assertStreamURL(for streamID: String) async throws -> URL {
+        guard let keyID = UserDefaults.standard.string(forKey: Self.keyIDDefaultsKey) else {
+            throw AttestationError.signingKeyUnavailable
+        }
+        let signingKey = try loadSigningKey()
+
         let token = try await fetchChallengeToken()
         let challenge = try decodeChallenge(from: token)
-        let clientDataHash = Data(SHA256.hash(data: Data(challenge.utf8)))
 
-        let service = DCAppAttestService.shared
-        let assertionData: Data
+        // P256.Signing signs SHA256(message) internally; the backend verifies the
+        // DER signature against SHA256(streamID || challenge).
+        var message = Data(streamID.utf8)
+        message.append(Data(challenge.utf8))
+        let signature: Data
         do {
-            assertionData = try await service.generateAssertion(keyID, clientDataHash: clientDataHash)
+            signature = try signingKey.signature(for: message).derRepresentation
         } catch {
-            throw AttestationError.attestationFailed(error)
+            throw AttestationError.signingFailed(error)
         }
 
         let endpoint = backendBaseURL.appendingPathComponent("assert-and-stream")
@@ -183,7 +203,7 @@ final class AttestationManager {
         request.httpBody = try JSONEncoder().encode(AssertRequest(
             challengeToken: token,
             keyID: keyID,
-            assertionObject: assertionData.base64EncodedString(),
+            signature: signature.base64EncodedString(),
             streamID: streamID
         ))
 
@@ -238,14 +258,9 @@ final class AttestationManager {
 
     // MARK: - Key lifecycle
 
-    private func resolvedKeyID(service: DCAppAttestService) async throws -> String {
-        if let stored = UserDefaults.standard.string(forKey: Self.keyIDDefaultsKey) {
-            return stored
-        }
-        return try await generateAndStoreKey(service: service)
-    }
-
-    private func generateAndStoreKey(service: DCAppAttestService) async throws -> String {
+    // Generates a fresh App Attest key and stores its ID. The App Attest key is
+    // used only once, to attest the signing key during attestation.
+    private func generateAttestKey(service: DCAppAttestService) async throws -> String {
         do {
             let keyID = try await service.generateKey()
             UserDefaults.standard.set(keyID, forKey: Self.keyIDDefaultsKey)
@@ -255,16 +270,83 @@ final class AttestationManager {
         }
     }
 
-    private func clearStoredKeyID() {
-        UserDefaults.standard.removeObject(forKey: Self.keyIDDefaultsKey)
+    // Creates a device-bound Secure Enclave signing key. Accessible only while the
+    // device is unlocked and never synced off-device; no biometry so streaming
+    // never prompts the user.
+    private func makeSigningKey() throws -> SecureEnclave.P256.Signing.PrivateKey {
+        var accessError: Unmanaged<CFError>?
+        guard let access = SecAccessControlCreateWithFlags(
+            nil,
+            kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            .privateKeyUsage,
+            &accessError
+        ) else {
+            throw AttestationError.signingKeyCreationFailed(accessError!.takeRetainedValue())
+        }
+        do {
+            return try SecureEnclave.P256.Signing.PrivateKey(accessControl: access)
+        } catch {
+            throw AttestationError.signingKeyCreationFailed(error)
+        }
+    }
+
+    private func loadSigningKey() throws -> SecureEnclave.P256.Signing.PrivateKey {
+        guard let blob = try Keychain.load(tag: Self.signingKeyTag) else {
+            throw AttestationError.signingKeyUnavailable
+        }
+        do {
+            return try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob)
+        } catch {
+            throw AttestationError.signingKeyUnavailable
+        }
     }
 
     private func markRegistered() {
         UserDefaults.standard.set(true, forKey: Self.keyRegisteredDefaultsKey)
     }
 
-    private func clearRegistered() {
+    private func clearRegistration() {
         UserDefaults.standard.removeObject(forKey: Self.keyRegisteredDefaultsKey)
+        UserDefaults.standard.removeObject(forKey: Self.keyIDDefaultsKey)
+        Keychain.delete(tag: Self.signingKeyTag)
+    }
+}
+
+// MARK: - Keychain
+
+private enum Keychain {
+    static func save(_ data: Data, tag: String) throws {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: tag,
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+        ]
+        SecItemDelete(query as CFDictionary)
+        let status = SecItemAdd(query as CFDictionary, nil)
+        guard status == errSecSuccess else { throw AttestationError.keychainFailure(status) }
+    }
+
+    static func load(tag: String) throws -> Data? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: tag,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess else { throw AttestationError.keychainFailure(status) }
+        return item as? Data
+    }
+
+    static func delete(tag: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrAccount as String: tag,
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
 
@@ -282,25 +364,27 @@ private struct AttestKeyRequest: Encodable {
     let challengeToken: String
     let keyID: String
     let attestationObject: String
+    let publicKey: String
 
     enum CodingKeys: String, CodingKey {
         case challengeToken    = "challenge_token"
         case keyID             = "key_id"
         case attestationObject = "attestation_object"
+        case publicKey         = "public_key"
     }
 }
 
 private struct AssertRequest: Encodable {
     let challengeToken: String
     let keyID: String
-    let assertionObject: String
+    let signature: String
     let streamID: String
 
     enum CodingKeys: String, CodingKey {
-        case challengeToken  = "challenge_token"
-        case keyID           = "key_id"
-        case assertionObject = "assertion_object"
-        case streamID        = "stream_id"
+        case challengeToken = "challenge_token"
+        case keyID          = "key_id"
+        case signature      = "signature"
+        case streamID       = "stream_id"
     }
 }
 

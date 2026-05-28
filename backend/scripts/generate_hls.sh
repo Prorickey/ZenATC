@@ -4,9 +4,6 @@
 # The Docker build runs the equivalent automatically.
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
-
 mkdir -p audio/hls
 
 MAX_JOBS="${MAX_JOBS:-4}"

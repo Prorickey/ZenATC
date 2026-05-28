@@ -1,8 +1,7 @@
 package main
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -14,8 +13,8 @@ import (
 )
 
 var cdnConfig struct {
-	domain        string
-	signingSecret []byte
+	domain     string
+	privateKey ed25519.PrivateKey
 }
 
 func initCDN() {
@@ -25,49 +24,58 @@ func initCDN() {
 		log.Println("[cdn] WARNING: CLOUDFLARE_DOMAIN not set — URLs will not resolve")
 	}
 
-	secretB64 := os.Getenv("CLOUDFLARE_URL_SIGNING_SECRET")
-	if secretB64 == "" {
-		log.Println("[cdn] WARNING: CLOUDFLARE_URL_SIGNING_SECRET not set — URL signing will fail at runtime")
+	seedB64 := os.Getenv("CLOUDFLARE_URL_SIGNING_PRIVATE_KEY")
+	if seedB64 == "" {
+		log.Println("[cdn] WARNING: CLOUDFLARE_URL_SIGNING_PRIVATE_KEY not set — URL signing will fail at runtime")
 		return
 	}
 
-	secret, err := base64.StdEncoding.DecodeString(secretB64)
+	seed, err := base64.StdEncoding.DecodeString(seedB64)
 	if err != nil {
-		log.Fatalf("[cdn] CLOUDFLARE_URL_SIGNING_SECRET is not valid base64: %v", err)
+		log.Fatalf("[cdn] CLOUDFLARE_URL_SIGNING_PRIVATE_KEY is not valid base64: %v", err)
 	}
-	if len(secret) < 32 {
-		log.Fatal("[cdn] CLOUDFLARE_URL_SIGNING_SECRET must decode to at least 32 bytes")
+	if len(seed) != ed25519.SeedSize {
+		log.Fatalf("[cdn] CLOUDFLARE_URL_SIGNING_PRIVATE_KEY must decode to %d bytes (an Ed25519 seed), got %d", ed25519.SeedSize, len(seed))
 	}
-	cdnConfig.signingSecret = secret
-	log.Printf("[cdn] URL signing configured, domain: %s", cdnConfig.domain)
+	cdnConfig.privateKey = ed25519.NewKeyFromSeed(seed)
+
+	pub := cdnConfig.privateKey.Public().(ed25519.PublicKey)
+	log.Printf("[cdn] URL signing configured (Ed25519), domain: %s", cdnConfig.domain)
+	log.Printf("[cdn] public key (give this to the Worker): %s", base64.StdEncoding.EncodeToString(pub))
 }
 
-// signedStreamURL returns a short-lived Cloudflare-compatible signed URL for
-// the HLS playlist of the given stream ID.
-//
-// Signature format: hex( HMAC-SHA256(secret, "<path>:<expires>") )
-// The Cloudflare Worker validates this same signature at the edge and strips
-// the query params before forwarding to cache, so all users share one cached
-// copy of each .ts segment despite having different signed playlist URLs.
-func signedStreamURL(streamID string, ttl time.Duration) (string, error) {
-	if cdnConfig.signingSecret == nil {
-		return "", errors.New("CDN signing secret not configured")
-	}
-	path := fmt.Sprintf("/hls/%s/index.m3u8", streamID)
-	expires := time.Now().Add(ttl).Unix()
+// CDN access is granted by a short-lived signed cookie rather than per-URL query
+// signatures, so both the .m3u8 playlist and every .ts segment are protected.
+const (
+	cdnAccessTTL = 5 * time.Minute
+	// cookieName is the access cookie the Worker checks on every /hls/* request.
+	cookieName = "zenatc_hls"
+	// cookieScope is both the cookie Path and the signed message prefix. One
+	// cookie authorizes all streams, so switching tracks reuses it.
+	cookieScope = "/hls/"
+)
 
+// playlistURL returns the (unsigned) HLS playlist URL for a stream. Access is
+// gated by the cookie, not the URL, so it carries no query string.
+func playlistURL(streamID string) string {
 	u := &url.URL{
-		Scheme:   "https",
-		Host:     cdnConfig.domain,
-		Path:     path,
-		RawQuery: fmt.Sprintf("expires=%d&signature=%s", expires, computeHMACToken(path, expires)),
+		Scheme: "https",
+		Host:   cdnConfig.domain,
+		Path:   fmt.Sprintf("/hls/%s/index.m3u8", streamID),
 	}
-	return u.String(), nil
+	return u.String()
 }
 
-func computeHMACToken(path string, expires int64) string {
-	mac := hmac.New(sha256.New, cdnConfig.signingSecret)
-	mac.Write([]byte(fmt.Sprintf("%s:%d", path, expires)))
-	return hex.EncodeToString(mac.Sum(nil))
+// signAccessCookie mints the value for the access cookie: "<expires>.<hexsig>"
+// where the signature covers "<cookieScope>:<expires>". The Cloudflare Worker
+// verifies it at the edge with the matching public key (it cannot mint cookies),
+// then fetches the clean URL with the cookie stripped, so all users still share
+// one cached copy of each .ts segment.
+func signAccessCookie(expires int64) (string, error) {
+	if cdnConfig.privateKey == nil {
+		return "", errors.New("CDN signing key not configured")
+	}
+	message := fmt.Sprintf("%s:%d", cookieScope, expires)
+	sig := ed25519.Sign(cdnConfig.privateKey, []byte(message))
+	return fmt.Sprintf("%d.%s", expires, hex.EncodeToString(sig)), nil
 }
-

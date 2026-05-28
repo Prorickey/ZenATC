@@ -1,18 +1,21 @@
 /**
- * ZenATC HLS signing Worker
+ * ZenATC HLS access Worker
  *
- * Validates HMAC-SHA256 signed URLs before forwarding to the origin/cache.
- * Strips ?expires=&signature= before fetching so all users share one cached
- * copy of each .ts segment despite arriving with different signed playlist URLs.
+ * Gates every /hls/* request (both the .m3u8 playlist and each .ts segment) on a
+ * short-lived signed access cookie, then forwards the CLEAN URL with the cookie
+ * stripped — so the edge cache key stays URL-only and all users still share one
+ * cached copy of each segment.
  *
- * Signature algorithm (must match backend/cdn.go computeHMACToken):
- *   message   = "<pathname>:<expires>"
- *   signature = hex( HMAC-SHA256(base64decode(CLOUDFLARE_URL_SIGNING_SECRET), message) )
+ * Cookie (set by backend /assert-and-stream, must match backend/cdn.go):
+ *   name  = "zenatc_hls"
+ *   value = "<expires>.<hexsig>"
+ *   sig   = hex( Ed25519-Sign(privateKey, "/hls/:<expires>") )
  *
- * Query params:
- *   expires   — Unix timestamp (seconds); request rejected if in the past
- *   signature — hex-encoded HMAC-SHA256 of "<pathname>:<expires>"
+ * The Worker holds only the PUBLIC key, so it can verify but never mint cookies.
  */
+
+const COOKIE_NAME = "zenatc_hls";
+const COOKIE_SCOPE = "/hls/";
 
 export default {
   async fetch(request, env) {
@@ -23,71 +26,91 @@ export default {
       return fetch(request);
     }
 
-    // .ts segments are immutable and publicly cacheable — no signature needed.
-    // Only playlists (.m3u8) require a valid signed URL.
-    if (url.pathname.endsWith(".ts")) {
-      return fetch(request, { cf: { cacheEverything: true } });
+    // ── Read and parse the access cookie ──────────────────────────────────────
+
+    const token = getCookie(request, COOKIE_NAME);
+    if (!token) {
+      return new Response("Missing access cookie", { status: 403 });
     }
 
-    // ── Validate query params ─────────────────────────────────────────────────
-
-    const expiresStr = url.searchParams.get("expires");
-    const signature = url.searchParams.get("signature");
-
-    if (!expiresStr || !signature) {
-      return new Response("Missing signature parameters", { status: 403 });
+    const dot = token.indexOf(".");
+    if (dot < 0) {
+      return new Response("Malformed access cookie", { status: 403 });
     }
+    const expiresStr = token.slice(0, dot);
+    const sigHex = token.slice(dot + 1);
 
     const expires = parseInt(expiresStr, 10);
     if (isNaN(expires) || Date.now() / 1000 > expires) {
-      return new Response("URL expired", { status: 403 });
+      return new Response("Access expired", { status: 403 });
     }
 
-    // ── Import signing key ────────────────────────────────────────────────────
-    // CLOUDFLARE_URL_SIGNING_SECRET is the same base64-encoded value that the
-    // Go backend reads from the environment — base64.StdEncoding.DecodeString.
+    // ── Import the public verification key ────────────────────────────────────
+    // CLOUDFLARE_URL_SIGNING_PUBLIC_KEY is the base64-encoded 32-byte raw Ed25519
+    // public key printed by the Go backend at startup. It is not a secret.
 
-    let keyBytes;
+    let cryptoKey;
     try {
-      keyBytes = base64Decode(env.CLOUDFLARE_URL_SIGNING_SECRET);
+      const keyBytes = base64Decode(env.CLOUDFLARE_URL_SIGNING_PUBLIC_KEY);
+      cryptoKey = await crypto.subtle.importKey(
+        "raw",
+        keyBytes,
+        { name: "Ed25519" },
+        false,
+        ["verify"]
+      );
     } catch {
       return new Response("Worker misconfigured", { status: 500 });
     }
 
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw",
-      keyBytes,
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
+    // ── Verify the signature ──────────────────────────────────────────────────
 
-    // ── Compute expected signature ────────────────────────────────────────────
-
-    const message = `${url.pathname}:${expires}`;
-    const sigBytes = await crypto.subtle.sign(
-      "HMAC",
-      cryptoKey,
-      new TextEncoder().encode(message)
-    );
-    const expected = toHex(new Uint8Array(sigBytes));
-
-    if (!timingSafeEqual(expected, signature.toLowerCase())) {
-      return new Response("Invalid signature", { status: 403 });
+    let sigBytes;
+    try {
+      sigBytes = hexDecode(sigHex);
+    } catch {
+      return new Response("Invalid access cookie", { status: 403 });
     }
 
-    // ── Forward to origin / CDN cache (clean URL, no query params) ───────────
+    const message = `${COOKIE_SCOPE}:${expires}`;
+    const valid = await crypto.subtle.verify(
+      { name: "Ed25519" },
+      cryptoKey,
+      sigBytes,
+      new TextEncoder().encode(message)
+    );
 
+    if (!valid) {
+      return new Response("Invalid access cookie", { status: 403 });
+    }
+
+    // ── Forward to origin / CDN cache (strip the cookie so the cache is shared) ─
+
+    const headers = new Headers(request.headers);
+    headers.delete("Cookie");
     const cleanURL = new URL(url);
     cleanURL.search = "";
     return fetch(cleanURL.toString(), {
-      headers: request.headers,
+      headers,
       cf: { cacheEverything: true },
     });
   },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function getCookie(request, name) {
+  const header = request.headers.get("Cookie");
+  if (!header) return null;
+  for (const part of header.split(";")) {
+    const eq = part.indexOf("=");
+    if (eq < 0) continue;
+    if (part.slice(0, eq).trim() === name) {
+      return part.slice(eq + 1).trim();
+    }
+  }
+  return null;
+}
 
 function base64Decode(b64) {
   const binary = atob(b64);
@@ -96,16 +119,13 @@ function base64Decode(b64) {
   return bytes.buffer;
 }
 
-function toHex(bytes) {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-// Constant-time string comparison to prevent timing attacks.
-function timingSafeEqual(a, b) {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
+function hexDecode(hex) {
+  if (hex.length % 2 !== 0) throw new Error("odd-length hex");
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = parseInt(hex.substr(i * 2, 2), 16);
+    if (isNaN(byte)) throw new Error("invalid hex");
+    bytes[i] = byte;
+  }
+  return bytes;
 }

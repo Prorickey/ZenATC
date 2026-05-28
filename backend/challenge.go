@@ -39,7 +39,8 @@ type challengeClaims struct {
 
 // attestationChallengeHandler issues a short-lived, self-validating challenge
 // token. The token is a signed JWT containing a random 32-byte challenge and
-// a 5-minute expiry. No server-side state is stored.
+// a 30-second expiry. No server-side state is stored, so the short TTL is the
+// only bound on replaying a captured signed request.
 //
 // GET /challenge
 // Response 200: { "token": "<jwt>" }
@@ -56,7 +57,7 @@ func attestationChallengeHandler(c *gin.Context) {
 		Challenge: challenge,
 		RegisteredClaims: jwt.RegisteredClaims{
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(5 * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(30 * time.Second)),
 		},
 	}
 

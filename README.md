@@ -14,22 +14,22 @@ An iOS app that blends live ATC radio with lofi beats. Swipe through airports, m
 │  Lofi track picker ──► AVPlayer (HLS stream)         │
 │  Mixer slider ──────► volume on both players         │
 └──────────────────────┬───────────────────────────────┘
-                       │ App Attest → signed CDN URL
+                       │ App Attest → signed access cookie
                        ▼
 ┌──────────────────────────────────────────────────────┐
 │         Cloudflare Worker (zenatc.bedson.tech)       │
 │                                                      │
-│  /hls/* — validates HMAC-SHA256 signed URLs          │
-│  Strips query params before caching .ts segments     │
+│  /hls/* — verifies Ed25519 signed cookie (pubkey)    │
+│  Gates .m3u8 + .ts; strips cookie before caching     │
 └──────────────────────┬───────────────────────────────┘
-                       │ clean URL (no signature)
+                       │ clean URL (cookie stripped)
                        ▼
 ┌──────────────────────────────────────────────────────┐
 │           Go / Gin Backend (:8080 → 3303)            │
 │                                                      │
 │  /challenge        — JWT challenge for Attest        │
-│  /attest-key       — registers App Attest public key │
-│  /assert-and-stream — assertion-gated signed URL     │
+│  /attest-key       — registers app signing key       │
+│  /assert-and-stream — sets signed access cookie      │
 │  /hls/*            — serves pre-sliced VOD segments  │
 └──────────────────────────────────────────────────────┘
 ```
@@ -43,8 +43,9 @@ An iOS app that blends live ATC radio with lofi beats. Swipe through airports, m
 
 Audio streaming is gated by [Apple App Attest](https://developer.apple.com/documentation/devicecheck/establishing-your-app-s-integrity). The flow:
 
-1. **First launch**: iOS generates an attestation key, sends it to `/attest-key` with a signed JWT challenge — the backend verifies the CBOR attestation against Apple's root CA and stores the public key.
-2. **Every track load**: iOS calls `generateAssertion` (no Apple server contact) and sends it to `/assert-and-stream` — the backend verifies the ECDSA signature against the stored key and returns a short-lived signed CDN URL.
+1. **First launch (attestation)**: iOS generates a second, app-controlled Secure Enclave signing key and an App Attest key, then attests the App Attest key with `clientDataHash = SHA256(challenge ‖ signingPublicKey)`. It sends the attestation plus the signing public key to `/attest-key` — the backend verifies the CBOR attestation against Apple's root CA, confirms the attestation's nonce binds that exact signing key, and stores the signing public key. This is the only flow that contacts Apple.
+2. **Every track load (assertion)**: iOS signs `streamID ‖ challenge` with the stored signing key (no Apple contact, no `generateAssertion`) and sends the signature to `/assert-and-stream` — the backend verifies the ECDSA signature against the stored key and replies with a short-lived (5 min) signed **access cookie** scoped to `/hls/`. Replay of the assertion is bounded by the 30-second challenge TTL.
+3. **Edge access (Cloudflare Worker)**: the cookie gates *both* the `.m3u8` playlist and every `.ts` segment. The Worker verifies the cookie's Ed25519 signature with the public key alone, then forwards the clean URL with the cookie stripped — so segments stay shared in the edge cache. The iOS client refreshes the cookie every ~4 min during playback so long sessions never hit an expired cookie mid-stream. The signing key (Ed25519 private seed) lives only on the backend; the Worker can verify but never mint cookies.
 
 The entitlements file (`ZenATC.entitlements`) is set to `development`. Change to `production` before App Store submission.
 
@@ -85,9 +86,10 @@ ZenATC/
 └── backend/                     # Go streaming server
     ├── audio/                   # Source lofi MP3s (not in git — copy manually)
     ├── cloudflare/              # Cloudflare Worker script + wrangler config
-    ├── assertion.go             # App Attest assertion verification + key store
-    ├── cdn.go                   # HMAC-SHA256 signed URL generation
+    ├── assertion.go             # signing-key registration + signature verification
+    ├── cdn.go                   # Ed25519 signed URL generation
     ├── challenge.go             # Stateless JWT challenge endpoint
+    ├── db.go                    # SQLite store for registered signing keys
     ├── main.go                  # Gin server + HLS file handler
     ├── verification.go          # Apple attestation CBOR verification
     ├── scripts/
@@ -138,11 +140,11 @@ cp backend/.env.example backend/.env
 | Variable | Description |
 |----------|-------------|
 | `CLOUDFLARE_DOMAIN` | Domain serving HLS content |
-| `CLOUDFLARE_URL_SIGNING_SECRET` | HMAC-SHA256 secret for signed CDN URLs (base64, 32+ bytes) |
+| `CLOUDFLARE_URL_SIGNING_PRIVATE_KEY` | Ed25519 private key (seed) for signing CDN URLs (base64, 32-byte seed) |
 | `CHALLENGE_SIGNING_SECRET` | HMAC-SHA256 secret for JWT challenges (base64, 32+ bytes) |
 | `APPLE_APP_ID` | Team ID prefix + bundle identifier (e.g. `TEAMID.com.example.app`) |
 
-Generate secrets with `openssl rand -base64 32`. The `CLOUDFLARE_URL_SIGNING_SECRET` must match the value set in the Cloudflare Worker (`wrangler secret put CLOUDFLARE_URL_SIGNING_SECRET`).
+Generate the HMAC challenge secret with `openssl rand -base64 32`. Generate the CDN signing keypair with `go run ./scripts/genkey` — set the private seed as `CLOUDFLARE_URL_SIGNING_PRIVATE_KEY` here, and give the printed public key to the Cloudflare Worker as `CLOUDFLARE_URL_SIGNING_PUBLIC_KEY`. Because signing is asymmetric, the Worker only holds the public key and can verify but never mint URLs.
 
 ### Run locally
 
@@ -166,7 +168,7 @@ docker compose up -d
 
 ```bash
 cd backend/cloudflare
-wrangler secret put CLOUDFLARE_URL_SIGNING_SECRET   # same value as .env
+wrangler secret put CLOUDFLARE_URL_SIGNING_PUBLIC_KEY   # public key from `go run ./scripts/genkey`
 wrangler deploy
 ```
 

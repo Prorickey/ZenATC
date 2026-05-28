@@ -38,6 +38,11 @@ final class AudioManager {
     private var lofiItem: AVPlayerItem?
     private var lofiLoopObserver: Any?
     private var lofiFadeTimer: Timer?
+    private var cookieRefreshTask: Task<Void, Never>?
+
+    // The access cookie lives 5 min; refresh comfortably inside that window so
+    // segment fetches never hit an expired cookie mid-playback.
+    private static let cookieRefreshInterval: UInt64 = 240 * 1_000_000_000
 
     private let airports = Airport.all
     private let tracks = LofiTrack.all
@@ -100,6 +105,7 @@ final class AudioManager {
             Task { await loadAndPlayLofi() }
         } else {
             lofiPlayer?.play()
+            startCookieRefresh(immediate: true)
         }
         updateNowPlaying()
     }
@@ -107,6 +113,7 @@ final class AudioManager {
     private func pausePlayback() {
         atcPlayer?.pause()
         lofiPlayer?.pause()
+        stopCookieRefresh()
         updateNowPlaying()
     }
 
@@ -165,9 +172,11 @@ final class AudioManager {
 
         updateVolumes()
         if isPlaying { lofiPlayer?.play() }
+        startCookieRefresh(immediate: false)
     }
 
     private func tearDownLofi() {
+        stopCookieRefresh()
         if let obs = lofiLoopObserver {
             NotificationCenter.default.removeObserver(obs)
             lofiLoopObserver = nil
@@ -176,6 +185,31 @@ final class AudioManager {
         lofiPlayer = nil
         lofiItem = nil
         URLCache.shared.removeAllCachedResponses()
+    }
+
+    // MARK: - Access cookie refresh
+
+    // Keeps the short-lived /hls/ access cookie fresh while lofi is playing, so
+    // segment fetches never 403. Captures the manager (not self) to avoid a cycle.
+    private func startCookieRefresh(immediate: Bool) {
+        cookieRefreshTask?.cancel()
+        let manager = attestationManager
+        let filename = tracks[selectedTrackIndex].filename
+        cookieRefreshTask = Task {
+            if immediate {
+                try? await manager.refreshStreamAccess(for: filename)
+            }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: Self.cookieRefreshInterval)
+                if Task.isCancelled { break }
+                try? await manager.refreshStreamAccess(for: filename)
+            }
+        }
+    }
+
+    private func stopCookieRefresh() {
+        cookieRefreshTask?.cancel()
+        cookieRefreshTask = nil
     }
 
     private func resolveLofiURL(filename: String) async -> URL {
@@ -208,6 +242,7 @@ final class AudioManager {
             Task { await loadAndPlayLofi() }
         } else {
             lofiPlayer?.play()
+            startCookieRefresh(immediate: true)
         }
 
         suppressObservers = true

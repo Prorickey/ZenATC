@@ -2,10 +2,12 @@ name = "zenatc-hls"
 main = "worker.js"
 compatibility_date = "2024-01-01"
 
-# Bind the signing secret as a secret (set via `wrangler secret put`):
-#   wrangler secret put CLOUDFLARE_URL_SIGNING_SECRET
-# The value must be identical to the CLOUDFLARE_URL_SIGNING_SECRET env var
-# used by the backend Go server — both read it as base64-encoded bytes.
+# The Worker only needs the PUBLIC verification key (not a secret), so it can be
+# a plain var. Set it to the base64 public key the backend prints at startup:
+#   wrangler secret put CLOUDFLARE_URL_SIGNING_PUBLIC_KEY
+# (a plain [vars] entry works too, since the public key is not sensitive).
+# The backend signs with the matching Ed25519 private key and can never have it
+# extracted from the edge.
 
 [[routes]]
 # Replace zenatc.bedson.tech with the actual Cloudflare zone domain.
