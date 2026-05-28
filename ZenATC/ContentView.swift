@@ -846,20 +846,27 @@ private struct MixerSliderView: View {
                                     balance = newBalance
                                 }
                                 dragStartBalance = newBalance
+                                didTapJump = true
                                 return
                             }
                             dragStartBalance = balance
                         }
-                        if abs(value.translation.width) > 5 {
+                        // Only the un-animated branch can produce an instant jump. After a
+                        // tap-jump require a much larger movement before engaging it, so a
+                        // tap's slight finger jitter lets the spring slide instead of snapping.
+                        let dragThreshold: CGFloat = didTapJump ? 20 : 8
+                        if abs(value.translation.width) > dragThreshold {
                             let start = dragStartBalance ?? balance
                             let delta = Double(value.translation.width / usableRange)
                             balance = min(max(start + delta, 0), 1)
+                            didTapJump = false
                         }
                     }
                     .onEnded { _ in
                         isDragging = false
                         isSliderActive = false
                         dragStartBalance = nil
+                        didTapJump = false
                     }
             )
             .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
