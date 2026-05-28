@@ -24,7 +24,7 @@ struct SettingsView: View {
         Color(red: 0.15, green: 0.15, blue: 0.15)
     ]
 
-    private let filters: [FilterOption] = [
+    private static let filters: [FilterOption] = [
         FilterOption(title: "Normal", subtitle: "Regular ATC audio", isPro: false, isSelected: true),
         FilterOption(title: "Crisp", subtitle: "Sharp ATC audio that stands out", isPro: true, isSelected: false),
         FilterOption(title: "Hallway", subtitle: "Soft and muffled. Great for sleep", isPro: true, isSelected: false)
@@ -207,8 +207,13 @@ struct SettingsView: View {
             }
 
             VStack(spacing: 11) {
-                ForEach(filters) { filter in
-                    FilterRow(filter: filter, accent: themeManager.theme.foreground)
+                ForEach(Self.filters) { filter in
+                    FilterRow(
+                        filter: filter,
+                        accent: themeManager.theme.foreground,
+                        isPreviewing: audio.activePreview == .atc(filter.title),
+                        onPlay: { audio.toggleATCPreview(filter: filter.title) }
+                    )
                 }
 
                 HStack {
@@ -284,13 +289,19 @@ struct SettingsView: View {
                     AudioPackRow(
                         pack: pack,
                         accent: themeManager.theme.foreground,
-                        isSelected: pack.trackID.map { audio.enabledTrackIDs.contains($0) } ?? false
-                    ) {
-                        guard let trackID = pack.trackID else { return }
-                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
-                            audio.toggleTrack(trackID)
+                        isSelected: pack.trackID.map { audio.enabledTrackIDs.contains($0) } ?? false,
+                        isPreviewing: pack.trackID.map { audio.activePreview == .lofi($0) } ?? false,
+                        onToggle: {
+                            guard let trackID = pack.trackID else { return }
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                audio.toggleTrack(trackID)
+                            }
+                        },
+                        onPlay: {
+                            guard let trackID = pack.trackID else { return }
+                            audio.toggleLofiPreview(trackID: trackID)
                         }
-                    }
+                    )
                 }
             }
         }
@@ -410,6 +421,8 @@ private struct FilterRow: View {
     @Environment(ThemeManager.self) private var themeManager
     let filter: FilterOption
     let accent: Color
+    let isPreviewing: Bool
+    let onPlay: () -> Void
     @State private var shake: CGFloat = 0
 
     var body: some View {
@@ -455,16 +468,21 @@ private struct FilterRow: View {
 
             Spacer()
 
-            // Play button
-            Circle()
-                .fill(filter.isSelected ? background : accent)
-                .frame(width: 44, height: 44)
-                .overlay(
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(filter.isSelected ? accent : background)
-                        .offset(x: 1.5)
-                )
+            // Play button — previews the (regular) ATC audio
+            Button {
+                onPlay()
+            } label: {
+                Circle()
+                    .fill(filter.isSelected ? background : accent)
+                    .frame(width: 44, height: 44)
+                    .overlay(
+                        Image(systemName: isPreviewing ? "pause.fill" : "play.fill")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(filter.isSelected ? accent : background)
+                            .offset(x: isPreviewing ? 0 : 1.5)
+                    )
+            }
+            .buttonStyle(.plain)
         }
         .frame(height: filter.isSelected ? 70 : 69)
         .padding(.horizontal, 16)
@@ -494,76 +512,100 @@ private struct AudioPackRow: View {
     let pack: AudioPack
     let accent: Color
     let isSelected: Bool
-    let onTap: () -> Void
+    let isPreviewing: Bool
+    let onToggle: () -> Void   // add/remove from the wheel (free packs)
+    let onPlay: () -> Void     // preview the associated lofi audio
     @State private var shake: CGFloat = 0
 
     var body: some View {
         let background = themeManager.theme.background
-        Button {
-            if pack.isPro {
-                withAnimation(.linear(duration: 0.4)) { shake += 1 }
-            } else {
-                onTap()
-            }
-        } label: {
-            HStack(spacing: 12) {
-                if pack.isPro {
-                    Image(systemName: "lock.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(accent)
-                        .frame(width: 22, height: 22)
-                        .modifier(ShakeEffect(animatableData: shake))
-                } else {
-                    Circle()
-                        .strokeBorder(
-                            isSelected ? background : accent.opacity(0.4),
-                            lineWidth: isSelected ? 2 : 1
-                        )
-                        .background(Circle().fill(isSelected ? Color.clear : accent.opacity(0.12)))
-                        .frame(width: 22, height: 22)
-                }
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(pack.title)
+        HStack(spacing: 12) {
+            // Selection area — toggles wheel membership (free) or shakes the lock (pro)
+            Button {
+                handleSelect()
+            } label: {
+                HStack(spacing: 12) {
+                    if pack.isPro {
+                        Image(systemName: "lock.fill")
                             .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(isSelected ? background : accent)
-                        if pack.isPro {
-                            Text("PRO")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(isSelected ? accent : background)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(isSelected ? background : accent)
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
+                            .foregroundStyle(accent)
+                            .frame(width: 22, height: 22)
+                            .modifier(ShakeEffect(animatableData: shake))
+                    } else {
+                        Circle()
+                            .strokeBorder(
+                                isSelected ? background : accent.opacity(0.4),
+                                lineWidth: isSelected ? 2 : 1
+                            )
+                            .background(Circle().fill(isSelected ? Color.clear : accent.opacity(0.12)))
+                            .frame(width: 22, height: 22)
                     }
-                    Text(pack.subtitle)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isSelected ? background.opacity(0.85) : accent.opacity(0.65))
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(pack.title)
+                                .font(.system(size: 20, weight: .bold))
+                                .foregroundStyle(isSelected ? background : accent)
+                            if pack.isPro {
+                                Text("PRO")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(isSelected ? accent : background)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(isSelected ? background : accent)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                            }
+                        }
+                        Text(pack.subtitle)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(isSelected ? background.opacity(0.85) : accent.opacity(0.65))
+                    }
+
+                    Spacer()
                 }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
-                Spacer()
-
+            // Play button — previews the associated lofi audio (pro packs have none → shake)
+            Button {
+                handlePlay()
+            } label: {
                 Circle()
                     .fill(isSelected ? background : accent)
                     .frame(width: 44, height: 44)
                     .overlay(
-                        Image(systemName: "play.fill")
+                        Image(systemName: isPreviewing ? "pause.fill" : "play.fill")
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(isSelected ? accent : background)
-                            .offset(x: 1.5)
+                            .offset(x: isPreviewing ? 0 : 1.5)
                     )
             }
-            .padding(.horizontal, 16)
-            .frame(height: 69)
-            .background(
-                RoundedRectangle(cornerRadius: 18)
-                    .fill(isSelected ? accent : accent.opacity(0.1))
-            )
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .frame(height: 69)
+        .background(
+            RoundedRectangle(cornerRadius: 18)
+                .fill(isSelected ? accent : accent.opacity(0.1))
+        )
         .sensoryFeedback(.warning, trigger: shake)
+    }
+
+    private func handleSelect() {
+        if pack.isPro {
+            withAnimation(.linear(duration: 0.4)) { shake += 1 }
+        } else {
+            onToggle()
+        }
+    }
+
+    private func handlePlay() {
+        if pack.isPro {
+            withAnimation(.linear(duration: 0.4)) { shake += 1 }
+        } else {
+            onPlay()
+        }
     }
 }
 
@@ -611,8 +653,17 @@ private struct PremiumAudioCard: View {
     let accent: Color
 
     var body: some View {
-        // Lifts the retinted art since colorMultiply darkens mid-tones. 0 = no lift, ~0.3 = much brighter.
-        let artBrightness = 0.18
+        // colorMultiply darkens and dulls the retint; saturation restores the vivid hue.
+        let artSaturation = 1.5
+        // brightness lifts the muddy retint back up — but a luminous accent (the magenta
+        // themes) floods the shadows and washes out. The Figma wants those kept dark, so
+        // give bright accents little/no lift while the warmer orange default still lifts.
+        let artBrightness: Double = {
+            switch themeManager.currentIndex {
+            case 1, 5: return 0.0   // magenta themes — keep shadows deep per the Figma
+            default:   return 0.28  // orange & friends — lift the muddy retint
+            }
+        }()
         ZStack(alignment: .topLeading) {
             // Card background
             RoundedRectangle(cornerRadius: 20)
@@ -653,6 +704,7 @@ private struct PremiumAudioCard: View {
                             .grayscale(1)
                             .colorMultiply(accent)
                             .brightness(artBrightness)
+                            .saturation(artSaturation)
 
                         Image("spiral_bottom")
                             .resizable()
@@ -660,6 +712,7 @@ private struct PremiumAudioCard: View {
                             .grayscale(1)
                             .colorMultiply(accent)
                             .brightness(artBrightness)
+                            .saturation(artSaturation)
                     }
                     .padding(.horizontal, 4)
 
@@ -671,6 +724,7 @@ private struct PremiumAudioCard: View {
                         .grayscale(1)
                         .colorMultiply(accent)
                         .brightness(artBrightness)
+                        .saturation(artSaturation)
                 }
                 .padding(.bottom, 8)
             }

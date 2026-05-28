@@ -9,6 +9,12 @@ import Observation
 // Change to your Mac's LAN IP when testing on a physical device.
 private let backendBaseURL = "http://192.168.1.87:8080"
 
+// A single source previewed in isolation from the Settings screen.
+enum AudioPreview: Equatable {
+    case lofi(UUID)    // a specific lofi track
+    case atc(String)   // an ATC filter (regular audio for now), keyed by filter name
+}
+
 @Observable
 final class AudioManager {
     var isPlaying = false {
@@ -49,6 +55,12 @@ final class AudioManager {
     private var atcPlayer: AVAudioPlayer?
     // Lofi: HLS stream from Go backend via AVPlayer
     private var lofiPlayer: AVPlayer?
+
+    // Settings preview — plays one source (a single lofi track OR ATC) on its own,
+    // separate from the main mix. Exclusive: starting one stops any other.
+    private(set) var activePreview: AudioPreview?
+    private var previewLofiPlayer: AVPlayer?
+    private var previewATCPlayer: AVAudioPlayer?
 
     private let airports = Airport.all
 
@@ -133,6 +145,47 @@ final class AudioManager {
         } else {
             enabledTrackIDs.insert(id)
         }
+    }
+
+    // MARK: - Settings preview
+
+    /// Plays just the given track's lofi audio; tapping the active one again stops it.
+    func toggleLofiPreview(trackID: UUID) {
+        if activePreview == .lofi(trackID) { stopPreview(); return }
+        stopPreview()
+        guard let track = allTracks.first(where: { $0.id == trackID }),
+              let url = URL(string: "\(backendBaseURL)/radio/\(track.filename)/index.m3u8")
+        else { return }
+        let player = AVPlayer(url: url)
+        player.volume = 1.0
+        player.play()
+        previewLofiPlayer = player
+        activePreview = .lofi(trackID)
+    }
+
+    /// Plays just the ATC audio (regular, for the current airport); tapping again stops it.
+    func toggleATCPreview(filter: String) {
+        if activePreview == .atc(filter) { stopPreview(); return }
+        stopPreview()
+        let filename = airports[currentAirportIndex].atcFilename
+        guard let url = Bundle.main.url(forResource: filename, withExtension: "mp3", subdirectory: "Audio")
+                     ?? Bundle.main.url(forResource: filename, withExtension: "mp3")
+        else { return }
+        let player = try? AVAudioPlayer(contentsOf: url)
+        player?.numberOfLoops = -1
+        player?.volume = 1.0
+        player?.prepareToPlay()
+        player?.play()
+        previewATCPlayer = player
+        activePreview = .atc(filter)
+    }
+
+    func stopPreview() {
+        previewLofiPlayer?.pause()
+        previewLofiPlayer = nil
+        previewATCPlayer?.stop()
+        previewATCPlayer = nil
+        activePreview = nil
     }
 
     private func updateVolumes() {

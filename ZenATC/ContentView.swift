@@ -152,6 +152,14 @@ struct ContentView: View {
                 volumeOverlaySnoozed = false
             }
         }
+        .onChange(of: showSettings) { _, isOpen in
+            // Opening Settings always pauses the main mix; closing it stops any preview.
+            if isOpen {
+                audio.isPlaying = false
+            } else {
+                audio.stopPreview()
+            }
+        }
         .animation(.easeInOut(duration: 0.6), value: showVolumeOverlay)
         .onAppear { hasCompletedOnboarding = true }
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
