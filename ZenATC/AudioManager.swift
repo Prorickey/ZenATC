@@ -4,6 +4,7 @@
 //
 
 import AVFoundation
+import MediaPlayer
 import Observation
 
 let backendBaseURL = URL(string: "https://zenatc.bedson.tech")!
@@ -88,6 +89,7 @@ final class AudioManager {
     init() {
         configureCacheLimit()
         configureSession()
+        configureRemoteCommands()
     }
 
     // Warms up the lofi stream (resolves the signed URL + access cookie via App
@@ -132,12 +134,14 @@ final class AudioManager {
             lofiPlayer?.play()
             startCookieRefresh(immediate: true)
         }
+        updateNowPlaying()
     }
 
     private func pausePlayback() {
         atcPlayer?.pause()
         lofiPlayer?.pause()
         stopCookieRefresh()
+        updateNowPlaying()
     }
 
     func reloadATC() {
@@ -148,11 +152,13 @@ final class AudioManager {
             updateVolumes()
             atcPlayer?.play()
         }
+        updateNowPlaying()
     }
 
     func reloadLofi() {
         tearDownLofi()
         Task { await loadAndPlayLofi() }
+        updateNowPlaying()
     }
 
     private func loadATC() {
@@ -244,6 +250,75 @@ final class AudioManager {
     private func stopCookieRefresh() {
         cookieRefreshTask?.cancel()
         cookieRefreshTask = nil
+    }
+
+    // MARK: - Now Playing / remote commands
+
+    private func configureRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+
+        center.playCommand.addTarget { [weak self] _ in
+            self?.isPlaying = true
+            return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            self?.isPlaying = false
+            return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.isPlaying.toggle()
+            return .success
+        }
+
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            return self.stepTrack(by: 1) ? .success : .commandFailed
+        }
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            guard let self else { return .commandFailed }
+            return self.stepTrack(by: -1) ? .success : .commandFailed
+        }
+    }
+
+    // Moves selection within the enabled (picker) tracks. Setting selectedTrackID
+    // triggers the lofi reload via ContentView's onChange.
+    @discardableResult
+    private func stepTrack(by offset: Int) -> Bool {
+        let tracks = availableTracks
+        guard !tracks.isEmpty,
+              let idx = tracks.firstIndex(where: { $0.id == selectedTrackID })
+        else { return false }
+        let next = (idx + offset + tracks.count) % tracks.count
+        selectedTrackID = tracks[next].id
+        updateNowPlaying()
+        return true
+    }
+
+    private func updateNowPlaying() {
+        let track = selectedTrack
+        let airport = airports[currentAirportIndex]
+
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: track.name,
+            MPMediaItemPropertyArtist: "lofi atc — \(airport.code)",
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+        ]
+
+        if let icon = loadAppIcon() {
+            info[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: icon.size) { _ in icon }
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func loadAppIcon() -> UIImage? {
+        guard let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+              let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+              let files = primary["CFBundleIconFiles"] as? [String],
+              let name = files.last
+        else { return nil }
+        return UIImage(named: name)
     }
 
     // MARK: - Track selection
