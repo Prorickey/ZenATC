@@ -23,6 +23,14 @@ final class AudioManager {
     var currentAirportIndex = 0
     var selectedTrackIndex = 0
 
+    // Sleep timer — auto fade-out + pause after a chosen duration
+    private(set) var sleepActive = false
+    private(set) var sleepRemaining: TimeInterval = 0
+    private var sleepEndDate: Date?
+    private var sleepTicker: Timer?
+    private var fadeTicker: Timer?
+    private var fadeMultiplier: Float = 1.0
+
     // ATC: local bundle file, loops natively via AVAudioPlayer
     private var atcPlayer: AVAudioPlayer?
     // Lofi: HLS stream from Go backend via AVPlayer
@@ -92,7 +100,67 @@ final class AudioManager {
     }
 
     private func updateVolumes() {
-        atcPlayer?.volume = min(1.0, Float(balance) * 4.0)
-        lofiPlayer?.volume = Float(1.0 - balance)
+        atcPlayer?.volume = min(1.0, Float(balance) * 4.0) * fadeMultiplier
+        lofiPlayer?.volume = Float(1.0 - balance) * fadeMultiplier
+    }
+
+    // MARK: - Sleep timer
+
+    func startSleepTimer(minutes: Int) {
+        let total = Double(minutes) * 60
+        sleepEndDate = Date().addingTimeInterval(total)
+        sleepRemaining = total
+        sleepActive = true
+
+        sleepTicker?.invalidate()
+        // .common mode so the countdown keeps ticking during scrolls/gestures.
+        let ticker = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.sleepTick()
+        }
+        RunLoop.main.add(ticker, forMode: .common)
+        sleepTicker = ticker
+    }
+
+    func cancelSleepTimer() {
+        sleepTicker?.invalidate()
+        sleepTicker = nil
+        fadeTicker?.invalidate()
+        fadeTicker = nil
+        sleepEndDate = nil
+        sleepActive = false
+        sleepRemaining = 0
+        fadeMultiplier = 1.0
+        updateVolumes()
+    }
+
+    private func sleepTick() {
+        guard let end = sleepEndDate else { return }
+        let remaining = max(0, end.timeIntervalSinceNow)
+        sleepRemaining = remaining
+        if remaining <= 0 {
+            sleepTicker?.invalidate()
+            sleepTicker = nil
+            fadeOutAndPause(duration: 4)
+        }
+    }
+
+    private func fadeOutAndPause(duration: TimeInterval) {
+        let steps = max(1, Int(duration / 0.05))
+        var step = 0
+        fadeTicker?.invalidate()
+        let ticker = Timer(timeInterval: 0.05, repeats: true) { [weak self] timer in
+            guard let self else { timer.invalidate(); return }
+            step += 1
+            self.fadeMultiplier = max(0, 1.0 - Float(step) / Float(steps))
+            self.updateVolumes()
+            if step >= steps {
+                timer.invalidate()
+                self.fadeTicker = nil
+                self.isPlaying = false   // didSet → pausePlayback()
+                self.cancelSleepTimer()  // resets fadeMultiplier + clears state
+            }
+        }
+        RunLoop.main.add(ticker, forMode: .common)
+        fadeTicker = ticker
     }
 }

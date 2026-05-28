@@ -41,7 +41,7 @@ struct ContentView: View {
             .animation(.easeInOut(duration: 0.5), value: audio.selectedTrackIndex)
 
             VStack(spacing: 0) {
-                TopBarView(showSettings: $showSettings, showAirports: $showAirports, isPlaying: $audio.isPlaying)
+                TopBarView(audio: audio, showSettings: $showSettings, showAirports: $showAirports, isPlaying: $audio.isPlaying)
                     .padding(.horizontal, 20)
                     .padding(.top, 20)
 
@@ -159,24 +159,94 @@ struct ContentView: View {
 // MARK: - Top Bar
 
 private struct TopBarView: View {
+    let audio: AudioManager
     @Binding var showSettings: Bool
     @Binding var showAirports: Bool
     @Binding var isPlaying: Bool
     @Environment(ThemeManager.self) private var themeManager
+    @State private var picking = false
+
+    private let options = [5, 15, 30, 60, 90]
+    private let spring = Animation.spring(response: 0.5, dampingFraction: 0.82)
+
+    private var running: Bool { audio.sleepActive }
+    private var showingTimer: Bool { picking || running }
 
     var body: some View {
         HStack(spacing: 10) {
-            LiveIndicatorView(isPlaying: isPlaying, pausedColor: themeManager.theme.foreground)
+            if picking {
+                ForEach(options, id: \.self) { minutes in
+                    Button {
+                        audio.startSleepTimer(minutes: minutes)
+                        picking = false
+                    } label: {
+                        pill("\(minutes)m")
+                    }
+                    .buttonStyle(.plain)
+                    .transition(.opacity)
+                }
+                Spacer(minLength: 0)
+            } else {
+                LiveIndicatorView(isPlaying: isPlaying, pausedColor: themeManager.theme.foreground)
+                    .transition(.opacity)
+                AnimatedStatusText(text: isPlaying ? "LIVE" : "Paused", color: themeManager.theme.foreground)
+                    .transition(.opacity)
+                Spacer(minLength: 0)
+                if running {
+                    pill(mmss(audio.sleepRemaining))
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .leading).combined(with: .opacity),
+                            removal: .move(edge: .bottom).combined(with: .opacity)
+                        ))
+                }
+            }
 
-            AnimatedStatusText(
-                text: isPlaying ? "LIVE" : "Paused",
-                color: themeManager.theme.foreground
-            )
+            // Persistent moon/✕ — rests left of the icons (where the moon lives) in idle
+            // & running, slides to the far-right while picking, and morphs glyph in place.
+            moonToggle
 
-            Spacer()
-
-            RightIconsView(showSettings: $showSettings, showAirports: $showAirports)
+            if !picking {
+                RightIconsView(showSettings: $showSettings, showAirports: $showAirports)
+                    .transition(.opacity)
+            }
         }
+        .animation(spring, value: picking)
+        .animation(spring, value: running)
+        .sensoryFeedback(.impact(weight: .light), trigger: picking)
+        .sensoryFeedback(.selection, trigger: audio.sleepActive)
+    }
+
+    private var moonToggle: some View {
+        Button {
+            if running {
+                audio.cancelSleepTimer()
+            } else {
+                picking.toggle()
+            }
+        } label: {
+            Image(systemName: showingTimer ? "xmark" : "moon.fill")
+                .font(.system(size: 20))
+                .scaleEffect(x: 0.88, y: 1.0)
+                .foregroundStyle(themeManager.theme.foreground)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func pill(_ text: String) -> some View {
+        Text(text)
+            .font(.gtStandardAirport(size: 16))
+            .fontWeight(.heavy)
+            .monospacedDigit()
+            .foregroundStyle(themeManager.theme.foreground)
+            .padding(.horizontal, 11)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(themeManager.theme.foreground.opacity(0.2)))
+    }
+
+    private func mmss(_ t: TimeInterval) -> String {
+        let total = Int(t.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 
