@@ -315,34 +315,36 @@ private struct RadarSweepView: View {
             // Static halo ring
             context.stroke(disc, with: .color(color.opacity(0.30)), lineWidth: 1.5)
 
-            // Sweep line angle: start from top (−π/2), rotate clockwise
-            let currentAngle = fraction * 2 * .pi - .pi / 2
-            let trailArc: Double = .pi / 2  // 90° fading trail
+            // Leading sweep line position (from top, rotating clockwise).
+            let baseAngle = fraction * 2 * .pi - .pi / 2
+            let coneSpread: Double = .pi / 2 
 
-            // Trail: filled pie-wedge slices spanning center→edge, fading from
-            // transparent at the tail to solid just behind the sweep line
-            let segments = 24
-            for i in 0..<segments {
-                let t0 = Double(i) / Double(segments)
-                let t1 = Double(i + 1) / Double(segments)
-                let a0 = currentAngle - trailArc + t0 * trailArc
-                let a1 = currentAngle - trailArc + t1 * trailArc
-                var wedge = Path()
-                wedge.move(to: center)
-                wedge.addArc(center: center, radius: radius,
-                             startAngle: .radians(a0), endAngle: .radians(a1), clockwise: false)
-                wedge.closeSubpath()
-                context.fill(wedge, with: .color(color.opacity(t0 * 0.55)))
+            // Line 1 leads (bright); line 2 sits `coneSpread` behind it. The fading
+            // trail fills only the cone between them so it's enclosed by line 2,
+            // rather than each line dragging its own long trail.
+            let leadAngle = baseAngle
+            let backAngle = baseAngle - coneSpread
+
+            // Flat semi-transparent fill spanning the whole cone between the two
+            // lines (no fade). Bump coneOpacity for a denser wedge.
+            let coneOpacity: Double = 0.42
+            var cone = Path()
+            cone.move(to: center)
+            cone.addArc(center: center, radius: radius,
+                        startAngle: .radians(backAngle), endAngle: .radians(leadAngle), clockwise: false)
+            cone.closeSubpath()
+            context.fill(cone, with: .color(color.opacity(coneOpacity)))
+
+            // Both sweep lines from center to ring edge.
+            for angle in [leadAngle, backAngle] {
+                var line = Path()
+                line.move(to: center)
+                line.addLine(to: CGPoint(
+                    x: center.x + cos(angle) * radius,
+                    y: center.y + sin(angle) * radius
+                ))
+                context.stroke(line, with: .color(color.opacity(0.90)), lineWidth: 1.5)
             }
-
-            // Sweep line from center to ring edge
-            var line = Path()
-            line.move(to: center)
-            line.addLine(to: CGPoint(
-                x: center.x + cos(currentAngle) * radius,
-                y: center.y + sin(currentAngle) * radius
-            ))
-            context.stroke(line, with: .color(color.opacity(0.90)), lineWidth: 1.5)
         }
     }
 }
