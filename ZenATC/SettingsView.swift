@@ -214,8 +214,8 @@ struct SettingsView: View {
     private var airportCard: some View {
         VStack(spacing: 8) {
             Text("50")
-                .font(.airportCode(size: 100))
-                .fontWeight(.semibold)
+                .font(.gtStandardAirport(size: 150))
+                .fontWeight(.bold)
                 .foregroundStyle(themeManager.theme.foreground)
 
             HStack(spacing: 6) {
@@ -392,11 +392,12 @@ private struct FilterRow: View {
     let accent: Color
 
     var body: some View {
+        let background = themeManager.theme.background
         HStack(spacing: 14) {
             // Radio indicator
             Circle()
                 .strokeBorder(
-                    filter.isSelected ? Color.white : accent.opacity(0.3),
+                    filter.isSelected ? background : accent.opacity(0.3),
                     lineWidth: filter.isSelected ? 2 : 1.5
                 )
                 .background(Circle().fill(filter.isSelected ? Color.clear : accent.opacity(0.12)))
@@ -407,32 +408,32 @@ private struct FilterRow: View {
                 HStack(spacing: 7) {
                     Text(filter.title)
                         .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(filter.isSelected ? .white : accent)
+                        .foregroundStyle(filter.isSelected ? background : accent)
                     if filter.isPro {
                         Text("PRO")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(filter.isSelected ? accent : .white)
+                            .foregroundStyle(filter.isSelected ? accent : background)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(filter.isSelected ? Color.white : accent)
+                            .background(filter.isSelected ? background : accent)
                             .clipShape(RoundedRectangle(cornerRadius: 4))
                     }
                 }
                 Text(filter.subtitle)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(filter.isSelected ? .white.opacity(0.85) : accent.opacity(0.65))
+                    .foregroundStyle(filter.isSelected ? background.opacity(0.85) : accent.opacity(0.65))
             }
 
             Spacer()
 
             // Play button
             Circle()
-                .fill(filter.isSelected ? Color.white : accent)
+                .fill(filter.isSelected ? background : accent)
                 .frame(width: 44, height: 44)
                 .overlay(
                     Image(systemName: "play.fill")
                         .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(filter.isSelected ? accent : Color.white)
+                        .foregroundStyle(filter.isSelected ? accent : background)
                         .offset(x: 1.5)
                 )
         }
@@ -453,17 +454,19 @@ private struct AudioPack: Identifiable {
 }
 
 private struct AudioPackRow: View {
+    @Environment(ThemeManager.self) private var themeManager
     let pack: AudioPack
     let accent: Color
     let isSelected: Bool
     let onTap: () -> Void
 
     var body: some View {
+        let background = themeManager.theme.background
         Button(action: onTap) {
             HStack(spacing: 12) {
                 Circle()
                     .strokeBorder(
-                        isSelected ? Color.white : accent.opacity(0.4),
+                        isSelected ? background : accent.opacity(0.4),
                         lineWidth: isSelected ? 2 : 1
                     )
                     .background(Circle().fill(isSelected ? Color.clear : accent.opacity(0.12)))
@@ -473,31 +476,31 @@ private struct AudioPackRow: View {
                     HStack(spacing: 6) {
                         Text(pack.title)
                             .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(isSelected ? Color.white : accent)
+                            .foregroundStyle(isSelected ? background : accent)
                         if pack.isPro {
                             Text("PRO")
                                 .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(isSelected ? accent : Color.white)
+                                .foregroundStyle(isSelected ? accent : background)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(isSelected ? Color.white : accent)
+                                .background(isSelected ? background : accent)
                                 .clipShape(RoundedRectangle(cornerRadius: 4))
                         }
                     }
                     Text(pack.subtitle)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : accent.opacity(0.65))
+                        .foregroundStyle(isSelected ? background.opacity(0.85) : accent.opacity(0.65))
                 }
 
                 Spacer()
 
                 Circle()
-                    .fill(isSelected ? Color.white : accent)
+                    .fill(isSelected ? background : accent)
                     .frame(width: 44, height: 44)
                     .overlay(
                         Image(systemName: "play.fill")
                             .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(isSelected ? accent : Color.white)
+                            .foregroundStyle(isSelected ? accent : background)
                             .offset(x: 1.5)
                     )
             }
@@ -552,6 +555,7 @@ private struct AirportCard: View {
 }
 
 private struct PremiumAudioCard: View {
+    @Environment(ThemeManager.self) private var themeManager
     let accent: Color
 
     var body: some View {
@@ -569,7 +573,7 @@ private struct PremiumAudioCard: View {
                             .foregroundStyle(accent)
                         Text("PRO")
                             .font(.system(size: 10, weight: .bold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(themeManager.theme.background)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
                             .background(accent)

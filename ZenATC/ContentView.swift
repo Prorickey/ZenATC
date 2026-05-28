@@ -833,7 +833,7 @@ private struct AudioWavesView: View {
                 // Shared lofi beat groove (~78 BPM, 4/4): kick on beats 1 & 3, snare
                 // backbeat on 2 & 4. Gaussian pulses give a percussive "punch" that
                 // swells the whole wave in time, rather than a smooth sine throb.
-                let beatsPerSec: Double = 30 / 60.0
+                let beatsPerSec: Double = 78 / 60.0
                 let beatInBar: Double = (t * beatsPerSec).truncatingRemainder(dividingBy: 4.0) // 0..4
                 func pulse(_ pos: Double, _ width: Double) -> Double {
                     let d: Double = abs(beatInBar - pos)
