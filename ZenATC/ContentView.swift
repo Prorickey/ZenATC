@@ -158,7 +158,7 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.6), value: showVolumeOverlay)
-        .onAppear { hasCompletedOnboarding = true }
+        .onAppear { hasCompletedOnboarding = false } // TESTING: force onboarding every launch
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showSettings)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showUpgrade)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirports)
