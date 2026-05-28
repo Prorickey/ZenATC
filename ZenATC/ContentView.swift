@@ -351,59 +351,69 @@ private struct AirportCarouselView: View {
     let showTrackPicker: Bool
     let onOpen: () -> Void
 
-    @State private var slideDirection: Int = 1
+    @State private var dragTranslation: CGFloat = 0
 
     private static let flickSpring: Animation = .spring(response: 0.3, dampingFraction: 0.7)
+    private static let returnSpring: Animation = .spring(response: 0.35, dampingFraction: 0.85)
     private let flickThreshold: CGFloat = 40
     private let flickPredictedThreshold: CGFloat = 180
 
     var body: some View {
-        ZStack {
-            AirportPageView(airport: airports[currentIndex], dragY: dragY)
-                .id(currentIndex)
-                .transition(
-                    .asymmetric(
-                        insertion: .move(edge: slideDirection > 0 ? .trailing : .leading),
-                        removal: .move(edge: slideDirection > 0 ? .leading : .trailing)
-                    )
-                )
-        }
-        .contentShape(Rectangle())
-        .clipped()
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 12)
-                .onEnded { value in
-                    guard !showTrackPicker else { return }
-                    let dx = value.translation.width
-                    let dy = value.translation.height
-
-                    if abs(dy) > abs(dx) {
-                        let predicted = value.predictedEndTranslation.height
-                        if dy < -40 || predicted < -80 {
-                            onOpen()
-                        }
-                        return
+        GeometryReader { geo in
+            HStack(spacing: 0) {
+                ForEach(airports.indices, id: \.self) { i in
+                    AirportPageView(airport: airports[i], dragY: dragY)
+                        .frame(width: geo.size.width, height: geo.size.height)
+                }
+            }
+            .offset(x: -CGFloat(currentIndex) * geo.size.width + dragTranslation)
+            .contentShape(Rectangle())
+            .clipped()
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard !showTrackPicker else { return }
+                        let dx = value.translation.width
+                        let dy = value.translation.height
+                        if abs(dy) > abs(dx) { return }
+                        dragTranslation = dx
                     }
+                    .onEnded { value in
+                        guard !showTrackPicker else { return }
+                        let dx = value.translation.width
+                        let dy = value.translation.height
 
-                    let predictedDx = value.predictedEndTranslation.width
+                        if abs(dy) > abs(dx) {
+                            let predicted = value.predictedEndTranslation.height
+                            if dy < -40 || predicted < -80 {
+                                onOpen()
+                            }
+                            withAnimation(Self.returnSpring) {
+                                dragTranslation = 0
+                            }
+                            return
+                        }
 
-                    if dx < -flickThreshold || predictedDx < -flickPredictedThreshold {
-                        if currentIndex < airports.count - 1 {
-                            slideDirection = 1
+                        let predictedDx = value.predictedEndTranslation.width
+
+                        if (dx < -flickThreshold || predictedDx < -flickPredictedThreshold) && currentIndex < airports.count - 1 {
                             withAnimation(Self.flickSpring) {
                                 currentIndex += 1
+                                dragTranslation = 0
                             }
-                        }
-                    } else if dx > flickThreshold || predictedDx > flickPredictedThreshold {
-                        if currentIndex > 0 {
-                            slideDirection = -1
+                        } else if (dx > flickThreshold || predictedDx > flickPredictedThreshold) && currentIndex > 0 {
                             withAnimation(Self.flickSpring) {
                                 currentIndex -= 1
+                                dragTranslation = 0
+                            }
+                        } else {
+                            withAnimation(Self.returnSpring) {
+                                dragTranslation = 0
                             }
                         }
                     }
-                }
-        )
+            )
+        }
     }
 }
 
@@ -455,6 +465,7 @@ private struct AirportPageView: View {
                 .scaleEffect(x: baseScaleX, y: finalScaleY, anchor: .center)
                 .position(x: geo.size.width / 2, y: posY)
                 .opacity(naturalTextWidth == 0 ? 0 : 1)
+                .animation(.spring(response: 0.55, dampingFraction: 0.85), value: dragY)
         }
     }
 }
@@ -484,12 +495,7 @@ private struct BottomControlsView: View {
                     .padding(.top, 16)
             }
             .offset(y: showTrackPicker ? -80 : 25)
-            .animation(
-                showTrackPicker
-                    ? Self.pickerSpring
-                    : Self.pickerSpring.delay(Self.fadeStagger + Self.fadeDuration * 0.5),
-                value: showTrackPicker
-            )
+            .animation(Self.pickerSpring, value: showTrackPicker)
 
             ZStack {
                 InlineTrackPicker(
@@ -497,7 +503,7 @@ private struct BottomControlsView: View {
                     selectedIndex: $selectedTrackIndex,
                     isExpanded: showTrackPicker,
                     onConfirm: {
-                        withAnimation(.easeInOut(duration: Self.fadeDuration)) {
+                        withAnimation(Self.pickerSpring) {
                             showTrackPicker = false
                         }
                     }
@@ -511,7 +517,7 @@ private struct BottomControlsView: View {
                 .allowsHitTesting(showTrackPicker)
 
                 Button {
-                    withAnimation(.easeInOut(duration: Self.fadeDuration)) {
+                    withAnimation(Self.pickerSpring) {
                         showTrackPicker = true
                     }
                 } label: {
@@ -593,16 +599,6 @@ private struct InlineTrackPicker: View {
                         .frame(maxWidth: .infinity)
                         .opacity(fits ? 1 : 0)
                         .contentShape(Rectangle())
-                        .onTapGesture {
-                            if isSelected && dragOffset == 0 {
-                                onConfirm()
-                            } else {
-                                withAnimation(.spring(response: 0.55, dampingFraction: 0.85)) {
-                                    selectedIndex = origIndex
-                                    dragOffset = 0
-                                }
-                            }
-                        }
                 }
             }
             .offset(y: baseOffset + dragOffset)
@@ -610,17 +606,31 @@ private struct InlineTrackPicker: View {
                 textWidths.merge(value) { _, new in new }
             }
         }
+        .contentShape(Rectangle())
         .gesture(
-            DragGesture(minimumDistance: 1)
+            DragGesture(minimumDistance: 0)
                 .onChanged { value in
-                    withAnimation(.none) {
-                        dragOffset = value.translation.height
-                    }
+                    dragOffset = value.translation.height
                 }
                 .onEnded { value in
+                    let distance = abs(value.translation.height)
+                    if distance < 5 {
+                        let tappedPos = Int(value.startLocation.y / itemHeight)
+                        let clampedPos = max(0, min(tappedPos, displayOrder.count - 1))
+                        let tappedIndex = displayOrder[clampedPos]
+                        dragOffset = 0
+                        if tappedIndex == selectedIndex {
+                            onConfirm()
+                        } else {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                selectedIndex = tappedIndex
+                            }
+                        }
+                        return
+                    }
                     let raw = Double(selectedDisplayPos) - Double(value.predictedEndTranslation.height) / Double(itemHeight)
                     let newPos = max(0, min(Int(round(raw)), displayOrder.count - 1))
-                    withAnimation(.spring(response: 0.40, dampingFraction: 0.85)) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                         selectedIndex = displayOrder[newPos]
                         dragOffset = 0
                     }
