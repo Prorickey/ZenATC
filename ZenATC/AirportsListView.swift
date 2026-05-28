@@ -96,7 +96,7 @@ private struct AirportRow: View {
         Button(action: action) {
             HStack(alignment: .center, spacing: 0) {
                 Text(airport.code.uppercased())
-                    .font(.gtStandardAirport(size: 60))
+                    .font(.airportCode(size: 60, width: 80))
                     .foregroundStyle(themeManager.theme.foreground.opacity(dimmed ? 0.38 : 1.0))
                     .lineLimit(1)
 

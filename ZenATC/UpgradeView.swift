@@ -12,11 +12,10 @@ struct UpgradeView: View {
     @Binding var showUpgrade: Bool
 
     @State private var selectedPlan = 1 // 0 = monthly, 1 = annual
-    @State private var isLoading = false
-    @State private var errorMessage: String?
+    @State private var showConfirmPage = false
 
-    private let accent = Color(red: 0.878, green: 0.298, blue: 0.149)
-    private let bestValueGreen = Color(red: 0.694, green: 0.847, blue: 0.725)
+    private var accent: Color { themeManager.theme.foreground }
+    private var bestValueGreen: Color { themeManager.theme.background }
 
     private let perks: [(title: String, subtitle: String)] = [
         ("5 PRO Audio packs",         "More moods and soundtracks"),
@@ -24,39 +23,47 @@ struct UpgradeView: View {
         ("50 more airports",          "Get 50 more of your favorite airports"),
     ]
 
-    private var selectedProduct: Product? {
-        guard !purchaseManager.products.isEmpty else { return nil }
-        let idx = min(selectedPlan, purchaseManager.products.count - 1)
-        return purchaseManager.products[idx]
-    }
-
     var body: some View {
         ZStack {
             themeManager.theme.background.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                header
+            GeometryReader { geo in
+                HStack(spacing: 0) {
+                    mainPage
+                        .frame(width: geo.size.width)
 
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        perksSection
-                            .padding(.top, 32)
-
-                        plansSection
-                            .padding(.top, 36)
-
-                        upgradeButton
-                            .padding(.top, 32)
-
-                        finePrint
-                            .padding(.top, 16)
-                    }
-                    .padding(.bottom, 48)
+                    confirmPage
+                        .frame(width: geo.size.width)
                 }
+                .frame(width: geo.size.width * 2, alignment: .leading)
+                .offset(x: showConfirmPage ? -geo.size.width : 0)
+                .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showConfirmPage)
             }
         }
-        .onChange(of: purchaseManager.isPro) {
-            if purchaseManager.isPro { showUpgrade = false }
+    }
+
+    // MARK: - Main Page
+
+    private var mainPage: some View {
+        VStack(spacing: 0) {
+            header
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    perksSection
+                        .padding(.top, 32)
+
+                    plansSection
+                        .padding(.top, 36)
+
+                    upgradeButton
+                        .padding(.top, 32)
+
+                    finePrint
+                        .padding(.top, 16)
+                }
+                .padding(.bottom, 48)
+            }
         }
     }
 
@@ -193,35 +200,19 @@ struct UpgradeView: View {
     // MARK: - Upgrade Button
 
     private var upgradeButton: some View {
-        VStack(spacing: 10) {
-            Button {
-                guard let product = selectedProduct else { return }
-                Task { await purchase(product) }
-            } label: {
-                Group {
-                    if isLoading {
-                        ProgressView().tint(themeManager.theme.background)
-                    } else {
-                        Text("Upgrade now")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(themeManager.theme.background)
-                    }
-                }
+        Button {
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                showConfirmPage = true
+            }
+        } label: {
+            Text("Upgrade now")
+                .font(.system(size: 20, weight: .bold))
+                .foregroundStyle(themeManager.theme.background)
                 .frame(width: 255, height: 76)
-                .background(isLoading ? accent.opacity(0.6) : accent)
+                .background(accent)
                 .clipShape(Capsule())
-            }
-            .buttonStyle(.plain)
-            .disabled(isLoading || selectedProduct == nil)
-
-            if let error = errorMessage {
-                Text(error)
-                    .font(.caption)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 19)
-            }
         }
+        .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
     }
 
@@ -253,7 +244,190 @@ struct UpgradeView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Purchase
+    // MARK: - Confirm Page
+
+    private var confirmPage: some View {
+        ConfirmPurchasePage(
+            themeManager: themeManager,
+            purchaseManager: purchaseManager,
+            preselectedPlanIndex: selectedPlan,
+            onBack: {
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.82)) {
+                    showConfirmPage = false
+                }
+            },
+            onDone: { showUpgrade = false }
+        )
+    }
+}
+
+// MARK: - Confirm Purchase Page
+
+private struct ConfirmPurchasePage: View {
+    let themeManager: ThemeManager
+    let purchaseManager: PurchaseManager
+    var preselectedPlanIndex: Int = 1
+    let onBack: () -> Void
+    let onDone: () -> Void
+
+    @State private var errorMessage: String?
+    @State private var isLoading = false
+
+    private var accent: Color { themeManager.theme.foreground }
+    private var bg: Color { themeManager.theme.background }
+    private var fg: Color { themeManager.theme.foreground }
+
+    private var selectedProduct: Product? {
+        let idx = preselectedPlanIndex < purchaseManager.products.count
+            ? preselectedPlanIndex : 0
+        return purchaseManager.products.isEmpty ? nil : purchaseManager.products[idx]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            confirmHeader
+
+            if !purchaseManager.isPro {
+                confirmContent
+            } else {
+                proContent
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(bg.ignoresSafeArea())
+        .onChange(of: purchaseManager.isPro) {
+            if purchaseManager.isPro { onDone() }
+        }
+    }
+
+    // MARK: - Header
+
+    private var confirmHeader: some View {
+        HStack(alignment: .center) {
+            Button(action: onBack) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .semibold))
+                    Text("Back")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .foregroundStyle(accent)
+            }
+            .buttonStyle(.plain)
+
+            Spacer()
+
+            Button {
+                onDone()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(accent)
+                    .frame(width: 42.24, height: 42.24)
+                    .background(accent.opacity(0.12))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 20)
+        .padding(.bottom, 28)
+    }
+
+    // MARK: - Confirm Purchase
+
+    private var confirmContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Confirm Plan")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(accent)
+                .padding(.bottom, 28)
+
+            if let product = selectedProduct {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(product.displayName)
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(accent)
+                        Text(product.displayPrice)
+                            .font(.system(size: 14))
+                            .foregroundStyle(accent.opacity(0.6))
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(accent.opacity(0.08))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(accent.opacity(0.2), lineWidth: 1))
+                )
+                .padding(.bottom, 24)
+
+                if let error = errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.bottom, 8)
+                }
+
+                actionButton("Purchase", disabled: isLoading) {
+                    Task { await purchase(product) }
+                }
+            }
+        }
+    }
+
+    // MARK: - Pro
+
+    private var proContent: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "checkmark.seal.fill")
+                .font(.system(size: 52))
+                .foregroundStyle(accent)
+                .padding(.bottom, 4)
+
+            Text("You're Pro")
+                .font(.system(size: 28, weight: .bold))
+                .foregroundStyle(accent)
+
+            Button {
+                onDone()
+            } label: {
+                Text("Done")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundStyle(accent.opacity(0.55))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 16)
+    }
+
+    // MARK: - Helpers
+
+    private func actionButton(_ title: String, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if isLoading {
+                    ProgressView().tint(bg)
+                } else {
+                    Text(title)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(bg)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
+            .background(disabled ? accent.opacity(0.35) : accent)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+    }
 
     private func purchase(_ product: Product) async {
         errorMessage = nil
