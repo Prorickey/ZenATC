@@ -90,6 +90,18 @@ final class AttestationManager {
             return try await assertStreamURL(for: streamID, keyID: keyID)
         }
     }
+    
+    // MARK: - Challenge fetch
+
+    private func fetchChallengeToken() async throws -> String {
+        let url = backendBaseURL.appendingPathComponent("challenge")
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            return try JSONDecoder().decode(ChallengeTokenResponse.self, from: data).token
+        } catch {
+            throw AttestationError.challengeFetchFailed(error)
+        }
+    }
 
     // MARK: - Attestation
 
@@ -122,6 +134,8 @@ final class AttestationManager {
         markRegistered()
     }
 
+    // Builds a payload of the key ID, challenge token, and attestation object by hashing the challenge and attesting
+    // with apples servers.
     private func buildPayload(keyID: String, service: DCAppAttestService) async throws -> AttestationPayload {
         let token = try await fetchChallengeToken()
         let challenge = try decodeChallenge(from: token)
@@ -198,18 +212,6 @@ final class AttestationManager {
             throw AttestationError.invalidStreamURL
         }
         return url
-    }
-
-    // MARK: - Challenge fetch
-
-    private func fetchChallengeToken() async throws -> String {
-        let url = backendBaseURL.appendingPathComponent("attestation-challenge")
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            return try JSONDecoder().decode(ChallengeTokenResponse.self, from: data).token
-        } catch {
-            throw AttestationError.challengeFetchFailed(error)
-        }
     }
 
     private func decodeChallenge(from jwt: String) throws -> String {

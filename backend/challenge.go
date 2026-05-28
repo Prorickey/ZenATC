@@ -41,7 +41,7 @@ type challengeClaims struct {
 // token. The token is a signed JWT containing a random 32-byte challenge and
 // a 5-minute expiry. No server-side state is stored.
 //
-// GET /attestation-challenge
+// GET /challenge
 // Response 200: { "token": "<jwt>" }
 func attestationChallengeHandler(c *gin.Context) {
 	raw := make([]byte, 32)

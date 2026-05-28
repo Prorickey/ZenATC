@@ -20,7 +20,6 @@ RUN apk add --no-cache ffmpeg openssl
 WORKDIR /app
 
 COPY --from=builder /app/zenatc ./
-COPY --from=builder /app/apple_app_attest_root_ca.pem ./
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 

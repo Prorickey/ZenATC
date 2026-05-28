@@ -27,7 +27,7 @@ An iOS app that blends live ATC radio with lofi beats. Swipe through airports, m
 ┌──────────────────────────────────────────────────────┐
 │           Go / Gin Backend (:8080 → 3303)            │
 │                                                      │
-│  /attestation-challenge — JWT challenge for Attest   │
+│  /challenge        — JWT challenge for Attest        │
 │  /attest-key       — registers App Attest public key │
 │  /assert-and-stream — assertion-gated signed URL     │
 │  /hls/*            — serves pre-sliced VOD segments  │
@@ -187,7 +187,7 @@ The app points to `https://zenatc.bedson.tech` by default (`backendBaseURL` in `
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/health` | Health check |
-| `GET` | `/attestation-challenge` | Issues JWT challenge for App Attest |
+| `GET` | `/challenge` | Issues JWT challenge for App Attest |
 | `POST` | `/attest-key` | Registers App Attest public key |
 | `POST` | `/assert-and-stream` | Assertion-gated signed CDN URL |
 | `GET` | `/hls/:id/index.m3u8` | HLS playlist |

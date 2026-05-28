@@ -8,17 +8,14 @@ import (
 	"crypto/x509"
 	_ "embed"
 	"encoding/asn1"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"regexp"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -74,49 +71,6 @@ type verifyRequest struct {
 	ChallengeToken    string `json:"challenge_token"    binding:"required"`
 	AttestationObject string `json:"attestation_object" binding:"required"` // base64-encoded CBOR
 	StreamID          string `json:"stream_id"          binding:"required"` // e.g. "lofi_late_night"
-}
-
-// MARK: - Handler
-
-// verifyAndStreamHandler is the combined Phase 3 + 4 entry point.
-// It validates the stateless challenge token and the Apple attestation object,
-// then returns a short-lived signed CDN URL for the requested stream.
-//
-// POST /verify-and-stream
-// Body: { "challenge_token": "...", "attestation_object": "<base64>", "stream_id": "lofi_late_night" }
-// Response 200: { "stream_url": "https://….cloudfront.net/…?Expires=…&Signature=…&Key-Pair-Id=…" }
-func verifyAndStreamHandler(c *gin.Context) {
-	var req verifyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "missing challenge_token, attestation_object, or stream_id"})
-		return
-	}
-
-	if !validStreamID.MatchString(req.StreamID) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid stream_id"})
-		return
-	}
-
-	attestationBytes, err := base64.StdEncoding.DecodeString(req.AttestationObject)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "attestation_object must be standard base64"})
-		return
-	}
-
-	if _, _, err := verifyAttestation(req.ChallengeToken, attestationBytes); err != nil {
-		log.Printf("[attest] verification failed: %v", err)
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "attestation verification failed"})
-		return
-	}
-
-	streamURL, err := signedStreamURL(req.StreamID, streamURLTTL)
-	if err != nil {
-		log.Printf("[cdn] failed to sign URL for %q: %v", req.StreamID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate stream URL"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"stream_url": streamURL})
 }
 
 // MARK: - Orchestration

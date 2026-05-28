@@ -5,6 +5,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/sha256"
+	"crypto/x509"
+	"database/sql"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -12,7 +14,6 @@ import (
 	"log"
 	"math/big"
 	"net/http"
-	"sync"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/gin-gonic/gin"
@@ -20,20 +21,9 @@ import (
 
 var errKeyNotFound = errors.New("key not found")
 
-// attestedKey holds the public key and current assertion counter for a registered device.
-type attestedKey struct {
-	publicKey *ecdsa.PublicKey
-	counter   uint32
-}
-
-var (
-	keyStore   = make(map[string]*attestedKey)
-	keyStoreMu sync.Mutex
-)
-
 // storeKey extracts the COSE public key from the attestation authData and stores it.
 // The COSE key (not the credential certificate's key) is what Apple uses for assertion signing.
-func storeKey(keyID string, certPub *ecdsa.PublicKey, initialAuthData []byte) {
+func storeKey(keyID string, certPub *ecdsa.PublicKey, initialAuthData []byte) error {
 	var initialCounter uint32
 	if len(initialAuthData) >= 37 {
 		initialCounter = binary.BigEndian.Uint32(initialAuthData[33:37])
@@ -55,10 +45,25 @@ func storeKey(keyID string, certPub *ecdsa.PublicKey, initialAuthData []byte) {
 		}
 	}
 
-	keyStoreMu.Lock()
-	defer keyStoreMu.Unlock()
-	keyStore[keyID] = &attestedKey{publicKey: pub, counter: initialCounter}
+	pubDER, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return fmt.Errorf("failed to marshal public key for %q: %w", keyID, err)
+	}
+
+	// Upsert: a fresh attestation for an existing key replaces the stored key
+	// and resets the counter to the attestation's initial value.
+	if _, err := db.Exec(`
+		INSERT INTO attested_keys (key_id, public_key, counter)
+		VALUES (?, ?, ?)
+		ON CONFLICT(key_id) DO UPDATE SET
+			public_key = excluded.public_key,
+			counter    = excluded.counter`,
+		keyID, pubDER, int64(initialCounter)); err != nil {
+		return fmt.Errorf("failed to store key %q: %w", keyID, err)
+	}
+
 	log.Printf("[attest] registered key %q (counter=%d)", keyID, initialCounter)
+	return nil
 }
 
 func parseCOSEKey(data []byte) (*ecdsa.PublicKey, error) {
@@ -128,7 +133,11 @@ func attestKeyHandler(c *gin.Context) {
 		return
 	}
 
-	storeKey(req.KeyID, pub, authData)
+	if err := storeKey(req.KeyID, pub, authData); err != nil {
+		log.Printf("[attest] failed to persist key %q: %v", req.KeyID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to register key"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{})
 }
 
@@ -202,12 +211,35 @@ func verifyAssertion(challengeToken, keyID string, assertionBytes []byte) error 
 		return fmt.Errorf("challenge token invalid: %w", err)
 	}
 
-	keyStoreMu.Lock()
-	defer keyStoreMu.Unlock()
+	// Run the read-check-write inside a transaction so two concurrent requests
+	// cannot both pass the strictly-increasing counter check and replay an assertion.
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck // rollback after Commit is a no-op
 
-	stored := keyStore[keyID]
-	if stored == nil {
+	var pubDER []byte
+	var storedCounter int64
+	switch err := tx.QueryRow(
+		`SELECT public_key, counter FROM attested_keys WHERE key_id = ?`,
+		keyID,
+	).Scan(&pubDER, &storedCounter); err {
+	case nil:
+		// found
+	case sql.ErrNoRows:
 		return errKeyNotFound
+	default:
+		return fmt.Errorf("failed to load key %q: %w", keyID, err)
+	}
+
+	parsedPub, err := x509.ParsePKIXPublicKey(pubDER)
+	if err != nil {
+		return fmt.Errorf("failed to parse stored public key for %q: %w", keyID, err)
+	}
+	publicKey, ok := parsedPub.(*ecdsa.PublicKey)
+	if !ok {
+		return fmt.Errorf("stored key %q is not an EC public key", keyID)
 	}
 
 	var assertion assertionCBOR
@@ -228,7 +260,7 @@ func verifyAssertion(challengeToken, keyID string, assertionBytes []byte) error 
 	// Verify counter is strictly increasing (bytes 33–36, big-endian).
 	// Prevents replay attacks: an intercepted assertion cannot be reused.
 	counter := binary.BigEndian.Uint32(assertion.AuthenticatorData[33:37])
-	if counter <= stored.counter {
+	if int64(counter) <= storedCounter {
 		return errors.New("counter not incremented — possible replay attack")
 	}
 
@@ -241,11 +273,29 @@ func verifyAssertion(challengeToken, keyID string, assertionBytes []byte) error 
 	inner := sha256.Sum256(composite)
 	nonce := sha256.Sum256(inner[:])
 
-	if !ecdsa.VerifyASN1(stored.publicKey, nonce[:], assertion.Signature) {
+	if !ecdsa.VerifyASN1(publicKey, nonce[:], assertion.Signature) {
 		return errors.New("assertion signature invalid")
 	}
 
-	// Update stored counter only after all checks pass.
-	stored.counter = counter
+	// Persist the new counter only after all checks pass. The WHERE clause guards
+	// against a concurrent update slipping in between the SELECT and UPDATE.
+	res, err := tx.Exec(
+		`UPDATE attested_keys SET counter = ? WHERE key_id = ? AND counter = ?`,
+		int64(counter), keyID, storedCounter,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update counter for %q: %w", keyID, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to read update result for %q: %w", keyID, err)
+	}
+	if affected == 0 {
+		return errors.New("counter update raced — possible replay attack")
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit counter update for %q: %w", keyID, err)
+	}
 	return nil
 }

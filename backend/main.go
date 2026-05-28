@@ -32,6 +32,7 @@ func main() {
 	initChallengeKey()
 	initVerification()
 	initCDN()
+	initDB()
 
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
@@ -56,9 +57,20 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	router.GET("/attestation-challenge", attestationChallengeHandler)
-	router.POST("/verify-and-stream", verifyAndStreamHandler)
+	// Step 1 and 2 only happen once per install because contacting
+	// apple's servers gets throttled
+
+	// Step 1: Get the attestation challenge 
+	router.GET("/challenge", attestationChallengeHandler)
+
+	// Step 2: Send the attestation object, key and other stuff to server
 	router.POST("/attest-key", attestKeyHandler)
+
+	// Every track load flow
+	// Step 1 happens to grab a challenge
+
+	// Step 2: assert the challenge with the attestation data from below
+	// and then begin the stream
 	router.POST("/assert-and-stream", assertAndStreamHandler)
 
 	// HLS audio — VOD segments pre-sliced at build time.
