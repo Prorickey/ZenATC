@@ -39,18 +39,18 @@ struct VolumeTooLowView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                HStack(alignment: .center, spacing: 6) {
+                HStack(alignment: .center, spacing: 0) {
                     Image(systemName: "speaker.fill")
                         .font(.system(size: 32, weight: .semibold))
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 32, weight: .semibold))
+                        .font(.system(size: 23, weight: .semibold))
                 }
                 .foregroundStyle(themeManager.theme.foreground)
                 .padding(.bottom, 14)
 
                 Text("Your\nvolume's\ntoo low")
-                    .font(.gtStandardAirport(size: 20))
-                    .fontWeight(.bold)
+                    .font(.gtStandardAirport(size: 52))
+                    .fontWeight(.black)
                     .foregroundStyle(themeManager.theme.foreground)
                     .multilineTextAlignment(.center)
 
@@ -65,8 +65,8 @@ struct VolumeTooLowView: View {
 
                 Button(action: onContinue) {
                     Text("Continue anyway")
-                        .font(.airportCode(size: 22))
-                        .fontWeight(.heavy)
+                        .font(.gtStandard(size: 22))
+                        .fontWeight(.bold)
                         .foregroundStyle(themeManager.theme.background)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 22)
