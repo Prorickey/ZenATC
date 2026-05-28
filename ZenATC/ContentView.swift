@@ -356,69 +356,51 @@ private struct AirportCarouselView: View {
     let showTrackPicker: Bool
     let onOpen: () -> Void
 
-    @State private var dragTranslation: CGFloat = 0
+    @State private var movingForward = true
 
-    private static let flickSpring: Animation = .spring(response: 0.3, dampingFraction: 0.7)
-    private static let returnSpring: Animation = .spring(response: 0.35, dampingFraction: 0.85)
+    private static let flickSpring: Animation = .spring(response: 0.4, dampingFraction: 0.85)
     private let flickThreshold: CGFloat = 40
     private let flickPredictedThreshold: CGFloat = 180
 
     var body: some View {
-        GeometryReader { geo in
-            HStack(spacing: 0) {
-                ForEach(airports.indices, id: \.self) { i in
-                    AirportPageView(airport: airports[i], dragY: dragY)
-                        .frame(width: geo.size.width, height: geo.size.height)
-                }
-            }
-            .offset(x: -CGFloat(currentIndex) * geo.size.width + dragTranslation)
-            .contentShape(Rectangle())
+        AirportPageView(airport: airports[currentIndex], dragY: dragY)
+            .id(currentIndex)
+            .transition(.asymmetric(
+                insertion: .move(edge: movingForward ? .trailing : .leading).combined(with: .opacity),
+                removal: .move(edge: movingForward ? .leading : .trailing).combined(with: .opacity)
+            ))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .clipped()
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        guard !showTrackPicker else { return }
-                        let dx = value.translation.width
-                        let dy = value.translation.height
-                        if abs(dy) > abs(dx) { return }
-                        dragTranslation = dx
-                    }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 20)
                     .onEnded { value in
                         guard !showTrackPicker else { return }
                         let dx = value.translation.width
                         let dy = value.translation.height
+                        let predicted = value.predictedEndTranslation
 
-                        if abs(dy) > abs(dx) {
-                            let predicted = value.predictedEndTranslation.height
-                            if dy < -40 || predicted < -80 {
-                                onOpen()
-                            }
-                            withAnimation(Self.returnSpring) {
-                                dragTranslation = 0
-                            }
-                            return
-                        }
-
-                        let predictedDx = value.predictedEndTranslation.width
-
-                        if (dx < -flickThreshold || predictedDx < -flickPredictedThreshold) && currentIndex < airports.count - 1 {
-                            withAnimation(Self.flickSpring) {
-                                currentIndex += 1
-                                dragTranslation = 0
-                            }
-                        } else if (dx > flickThreshold || predictedDx > flickPredictedThreshold) && currentIndex > 0 {
-                            withAnimation(Self.flickSpring) {
-                                currentIndex -= 1
-                                dragTranslation = 0
+                        if abs(dx) > abs(dy) {
+                            if (dx < -flickThreshold || predicted.width < -flickPredictedThreshold),
+                               currentIndex < airports.count - 1 {
+                                movingForward = true
+                                withAnimation(Self.flickSpring) {
+                                    currentIndex += 1
+                                }
+                            } else if (dx > flickThreshold || predicted.width > flickPredictedThreshold),
+                                      currentIndex > 0 {
+                                movingForward = false
+                                withAnimation(Self.flickSpring) {
+                                    currentIndex -= 1
+                                }
                             }
                         } else {
-                            withAnimation(Self.returnSpring) {
-                                dragTranslation = 0
+                            if dy < -40 || predicted.height < -80 {
+                                onOpen()
                             }
                         }
                     }
             )
-        }
     }
 }
 
@@ -430,7 +412,7 @@ private struct AirportPageView: View {
     @State private var naturalTextHeight: CGFloat = 0
 
     // ── Tune default letter size here ──────────────────────────────────────
-    private let defaultWidthFraction: CGFloat  = 0.98   // fraction of container width
+    private let defaultWidthFraction: CGFloat  = 1   // fraction of container width
     private let defaultHeightFraction: CGFloat = 0.96
     // fraction of container height
     // ───────────────────────────────────────────────────────────────────────
