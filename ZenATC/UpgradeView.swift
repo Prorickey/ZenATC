@@ -15,8 +15,8 @@ struct UpgradeView: View {
     @State private var selectedPlan = 1 // 0 = monthly, 1 = annual
     @State private var showAuthPage = false
 
-    private let accent = Color(red: 0.878, green: 0.298, blue: 0.149)
-    private let bestValueGreen = Color(red: 0.694, green: 0.847, blue: 0.725)
+    private var accent: Color { themeManager.theme.foreground }
+    private var bestValueGreen: Color { themeManager.theme.background }
 
     private let perks: [(title: String, subtitle: String)] = [
         ("5 PRO Audio packs",         "More moods and soundtracks"),
@@ -278,7 +278,7 @@ private struct AuthFlowPage: View {
     @State private var errorMessage: String?
     @State private var isLoading = false
 
-    private let accent = Color(red: 0.878, green: 0.298, blue: 0.149)
+    private var accent: Color { themeManager.theme.foreground }
 
     private var bg: Color { themeManager.theme.background }
     private var fg: Color { themeManager.theme.foreground }

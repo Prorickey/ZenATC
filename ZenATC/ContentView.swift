@@ -718,6 +718,10 @@ private struct MixerSliderView: View {
     @Environment(ThemeManager.self) private var themeManager
     @State private var isDragging = false
     @State private var dragStartBalance: Double? = nil
+    // True between a tap-jump and the gesture committing to a real drag. While set,
+    // small finger jitter is ignored so the tap's spring can finish (slide) instead
+    // of being snapped by the un-animated drag branch (instant jump).
+    @State private var didTapJump = false
 
     var body: some View {
         GeometryReader { geo in
@@ -743,16 +747,27 @@ private struct MixerSliderView: View {
             let rightProgress = max(0, min((endZone - rightDistance) / endZone, 1))
             let endProgress = max(leftProgress, rightProgress)
             let smoothProgress = endProgress * endProgress * (3 - 2 * endProgress)
-            let clipWidth = thumbWidth - (thumbWidth - endClipWidth) * smoothProgress
+            // While pressed at an end the pill would otherwise stay collapsed to the
+            // icon-sized clip. Let the press expand it back toward full thumb width, but
+            // anchored to the end it's resting on so it only grows inward (left end →
+            // grows right, right end → grows left). Zero when not pressed (thumbWidth
+            // shrinks below the clip) or away from the ends (smoothProgress 0).
+            // edgeExpandFactor tunes how far it grows inward: 1 = full thumb width, 0 = none.
+            let edgeExpandFactor: CGFloat = 0.4
+            let edgeExpand = max(0, thumbWidth - endClipWidth) * smoothProgress * edgeExpandFactor
+            let clipWidth = thumbWidth - (thumbWidth - endClipWidth) * smoothProgress + edgeExpand
             // At the ends the clipped pill grows past the nominal thumb width, so the
             // capsule hosting it must grow too — otherwise the visible pill is capped
             // short of the track end. Equals thumbWidth everywhere except the end morph.
             let capsuleWidth = max(thumbWidth, clipWidth)
             let leftIconCenter = iconInset + (iconFrame / 2)
             let rightIconCenter = geo.size.width - iconInset - (iconFrame / 2)
-            let targetCenter = rightProgress > leftProgress ? rightIconCenter : leftIconCenter
+            let atRightEnd = rightProgress > leftProgress
+            let targetCenter = atRightEnd ? rightIconCenter : leftIconCenter
             let baseCenter = baseThumbLeft + (thumbWidth / 2)
-            let desiredCenter = baseCenter + (targetCenter - baseCenter) * smoothProgress
+            // Shift the center by half the inward growth so the outer (pinned) edge holds.
+            let edgeShift = (atRightEnd ? -edgeExpand : edgeExpand) / 2
+            let desiredCenter = baseCenter + (targetCenter - baseCenter) * smoothProgress + edgeShift
             let thumbX = desiredCenter - (capsuleWidth / 2)
 
             ZStack(alignment: .leading) {
