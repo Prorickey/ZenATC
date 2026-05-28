@@ -73,17 +73,17 @@ struct ContentView: View {
                 .onChange(of: audio.selectedTrackIndex) { audio.reloadLofi() }
             }
 
-            SettingsView(
-                authManager: authManager,
-                purchaseManager: purchaseManager,
-                showSettings: $showSettings,
-                showUpgrade: $showUpgrade,
-                currentAirportIndex: $audio.currentAirportIndex
-            )
-            .offset(y: showSettings ? 0 : 1000)
-            .opacity(showSettings ? 1 : 0)
-            .allowsHitTesting(showSettings)
-            .zIndex(3)
+            if showSettings {
+                SettingsView(
+                    authManager: authManager,
+                    purchaseManager: purchaseManager,
+                    showSettings: $showSettings,
+                    showUpgrade: $showUpgrade,
+                    currentAirportIndex: $audio.currentAirportIndex
+                )
+                .transition(.move(edge: .bottom))
+                .zIndex(3)
+            }
 
             if showUpgrade {
                 UpgradeView(

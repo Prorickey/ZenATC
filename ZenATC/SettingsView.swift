@@ -43,7 +43,16 @@ struct SettingsView: View {
 
     var body: some View {
         ZStack {
-            themeManager.theme.background.ignoresSafeArea()
+            // Popup card background — rounded top, fills down to the bottom edge
+            UnevenRoundedRectangle(
+                topLeadingRadius: 28,
+                bottomLeadingRadius: 0,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 28,
+                style: .continuous
+            )
+            .fill(themeManager.theme.background)
+            .ignoresSafeArea(.container, edges: .bottom)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -68,6 +77,7 @@ struct SettingsView: View {
                     .zIndex(1)
             }
         }
+        .padding(.top, 10)
         .animation(.spring(response: 0.45, dampingFraction: 0.82), value: showAirportsList)
     }
 
