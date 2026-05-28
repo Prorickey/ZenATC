@@ -29,6 +29,11 @@ struct ContentView: View {
         ZStack(alignment: .top) {
             themeManager.theme.background.ignoresSafeArea()
 
+            AudioWavesView(amplitude: 1 - audio.balance)
+                .frame(height: 80)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .allowsHitTesting(false)
+
             VStack(spacing: 0) {
                 TopBarView(showSettings: $showSettings, showAirports: $showAirports, isPlaying: $audio.isPlaying)
                     .padding(.horizontal, 20)
@@ -557,34 +562,25 @@ private struct InlineTrackPicker: View {
     private let visibleCount = 3
     @State private var dragOffset: CGFloat = 0
     @State private var textWidths: [Int: CGFloat] = [:]
-    @State private var displayOrder: [Int] = []
-
-    private func rebuildDisplayOrder() {
-        guard !tracks.isEmpty else { displayOrder = []; return }
-        let n = tracks.count
-        let start = max(0, min(selectedIndex, n - 1))
-        displayOrder = (0..<n).map { (start + $0) % n }
-    }
 
     var body: some View {
         let totalHeight = itemHeight * CGFloat(visibleCount)
-        let selectedDisplayPos = displayOrder.firstIndex(of: selectedIndex) ?? 0
-        let baseOffset = -CGFloat(selectedDisplayPos) * itemHeight
-        let rawCenter = Double(selectedDisplayPos) - Double(dragOffset) / Double(itemHeight)
+        let middleSlot = (visibleCount - 1) / 2
+        let baseOffset = CGFloat(middleSlot - selectedIndex) * itemHeight
+        let rawCenter = Double(selectedIndex) - Double(dragOffset) / Double(itemHeight)
 
         GeometryReader { geo in
             let availableWidth = geo.size.width - 32
 
             VStack(spacing: 0) {
-                ForEach(displayOrder.indices, id: \.self) { pos in
-                    let origIndex = displayOrder[pos]
+                ForEach(tracks.indices, id: \.self) { pos in
                     let dist = abs(Double(pos) - rawCenter)
                     let size = CGFloat(28) + CGFloat(max(0, 1 - dist)) * 6.77
                     let opacity = max(0.15, 1.0 - dist * 0.55)
-                    let fits = (textWidths[origIndex] ?? 0) <= availableWidth
-                    let isSelected = origIndex == selectedIndex
+                    let fits = (textWidths[pos] ?? 0) <= availableWidth
+                    let isSelected = pos == selectedIndex
 
-                    Text(tracks[origIndex].name)
+                    Text(tracks[pos].name)
                         .font(.airportCode(size: isSelected ? 34.77 : size))
                         .fontWeight(.heavy)
                         .foregroundStyle(themeManager.theme.foreground.opacity(opacity))
@@ -592,7 +588,7 @@ private struct InlineTrackPicker: View {
                         .fixedSize(horizontal: true, vertical: false)
                         .background(
                             GeometryReader { proxy in
-                                Color.clear.preference(key: TextWidthKey.self, value: [origIndex: proxy.size.width])
+                                Color.clear.preference(key: TextWidthKey.self, value: [pos: proxy.size.width])
                             }
                         )
                         .frame(height: fits ? itemHeight : 0)
@@ -615,23 +611,22 @@ private struct InlineTrackPicker: View {
                 .onEnded { value in
                     let distance = abs(value.translation.height)
                     if distance < 5 {
-                        let tappedPos = Int(value.startLocation.y / itemHeight)
-                        let clampedPos = max(0, min(tappedPos, displayOrder.count - 1))
-                        let tappedIndex = displayOrder[clampedPos]
+                        let tappedPos = Int((value.startLocation.y - baseOffset) / itemHeight)
+                        let clampedPos = max(0, min(tappedPos, tracks.count - 1))
                         dragOffset = 0
-                        if tappedIndex == selectedIndex {
+                        if clampedPos == selectedIndex {
                             onConfirm()
                         } else {
                             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                selectedIndex = tappedIndex
+                                selectedIndex = clampedPos
                             }
                         }
                         return
                     }
-                    let raw = Double(selectedDisplayPos) - Double(value.predictedEndTranslation.height) / Double(itemHeight)
-                    let newPos = max(0, min(Int(round(raw)), displayOrder.count - 1))
+                    let raw = Double(selectedIndex) - Double(value.predictedEndTranslation.height) / Double(itemHeight)
+                    let newPos = max(0, min(Int(round(raw)), tracks.count - 1))
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        selectedIndex = displayOrder[newPos]
+                        selectedIndex = newPos
                         dragOffset = 0
                     }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -642,10 +637,6 @@ private struct InlineTrackPicker: View {
         .sensoryFeedback(.selection, trigger: selectedIndex)
         .frame(height: totalHeight)
         .clipped()
-        .onAppear { rebuildDisplayOrder() }
-        .onChange(of: isExpanded) { _, expanded in
-            if expanded { rebuildDisplayOrder() }
-        }
     }
 }
 
@@ -790,7 +781,10 @@ private struct MixerSliderView: View {
             .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isDragging)
         }
         .frame(height: 36 * 1.5)
-        .sensoryFeedback(.selection, trigger: Int(balance * 20))
+        .sensoryFeedback(.impact(weight: .light, intensity: 0.4), trigger: Int(balance * 10))
+        .sensoryFeedback(.impact(weight: .light, intensity: 0.4), trigger: isDragging) { _, newValue in
+            newValue
+        }
     }
 }
 
@@ -813,6 +807,47 @@ private struct PlayPauseButton: View {
                     .font(.system(size: 46, weight: .medium))
                     .foregroundStyle(isPlaying ? themeManager.theme.foreground : themeManager.theme.background)
                     .offset(x: isPlaying ? 0 : -1)
+            }
+        }
+    }
+}
+
+// MARK: - Audio Waves
+
+private struct AudioWavesView: View {
+    let amplitude: Double   // 0..1, scales bar height
+    @Environment(ThemeManager.self) private var themeManager
+
+    var body: some View {
+        let color = themeManager.theme.foreground
+        TimelineView(.animation) { context in
+            Canvas { ctx, size in
+                let t = context.date.timeIntervalSinceReferenceDate
+                let barCount = 56
+                let barSpacing = size.width / CGFloat(barCount)
+                let maxBarHeight = size.height
+
+                for i in 0..<barCount {
+                    let x = CGFloat(i) * barSpacing + barSpacing / 2
+
+                    // Layered sines for an organic, scrolling waveform
+                    let v1 = sin(Double(i) * 0.40 + t * 2.5)
+                    let v2 = sin(Double(i) * 0.85 - t * 1.7)
+                    let v3 = sin(Double(i) * 0.20 + t * 4.0)
+                    let combined = (v1 + v2 * 0.5 + v3 * 0.3) / 1.8     // -1..1
+                    let normalized = (combined + 1) / 2                  //  0..1
+
+                    let height = max(2, normalized * maxBarHeight * CGFloat(amplitude))
+                    let barWidth = barSpacing * 0.5
+                    let rect = CGRect(
+                        x: x - barWidth / 2,
+                        y: size.height - height,
+                        width: barWidth,
+                        height: height
+                    )
+                    ctx.fill(Path(roundedRect: rect, cornerRadius: barWidth / 2),
+                             with: .color(color))
+                }
             }
         }
     }
