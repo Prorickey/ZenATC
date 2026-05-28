@@ -168,6 +168,7 @@ private struct TopBarView: View {
 
     private let options = [5, 15, 30, 60, 90]
     private let spring = Animation.spring(response: 0.5, dampingFraction: 0.82)
+    private let popSpring = Animation.spring(response: 0.35, dampingFraction: 0.62)
 
     private var running: Bool { audio.sleepActive }
     private var showingTimer: Bool { picking || running }
@@ -196,7 +197,7 @@ private struct TopBarView: View {
                     pill(mmss(audio.sleepRemaining))
                         .transition(.asymmetric(
                             insertion: .move(edge: .leading).combined(with: .opacity),
-                            removal: .move(edge: .bottom).combined(with: .opacity)
+                            removal: .scale(scale: 0.1).combined(with: .opacity)
                         ))
                 }
             }
@@ -210,8 +211,9 @@ private struct TopBarView: View {
                     .transition(.opacity)
             }
         }
+        .frame(height: 30)
         .animation(spring, value: picking)
-        .animation(spring, value: running)
+        .animation(popSpring, value: running)
         .sensoryFeedback(.impact(weight: .light), trigger: picking)
         .sensoryFeedback(.selection, trigger: audio.sleepActive)
     }
@@ -238,8 +240,10 @@ private struct TopBarView: View {
             .font(.gtStandardAirport(size: 16))
             .fontWeight(.heavy)
             .monospacedDigit()
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(themeManager.theme.foreground)
-            .padding(.horizontal, 11)
+            .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(Capsule().fill(themeManager.theme.foreground.opacity(0.2)))
     }
