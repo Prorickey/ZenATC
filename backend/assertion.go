@@ -67,8 +67,6 @@ func parseCOSEKey(data []byte) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("CBOR unmarshal: %w", err)
 	}
 
-	log.Printf("[attest] COSE key map keys: %v", rawMap)
-
 	xRaw, ok := rawMap[-2]
 	if !ok {
 		return nil, fmt.Errorf("COSE key missing x (-2)")
@@ -86,8 +84,6 @@ func parseCOSEKey(data []byte) (*ecdsa.PublicKey, error) {
 	if !ok {
 		return nil, fmt.Errorf("COSE key y is not []byte: %T", yRaw)
 	}
-
-	log.Printf("[attest] COSE X(%d)=%x Y(%d)=%x", len(xBytes), xBytes, len(yBytes), yBytes)
 
 	x := new(big.Int).SetBytes(xBytes)
 	y := new(big.Int).SetBytes(yBytes)
@@ -237,9 +233,7 @@ func verifyAssertion(challengeToken, keyID string, assertionBytes []byte) error 
 	}
 
 	// Verify ECDSA signature.
-	// nonce = SHA256(authenticatorData || clientDataHash)
-	// where clientDataHash is what the iOS client passed to generateAssertion.
-	// The iOS client passes SHA256(challenge) as clientDataHash.
+	// Apple uses double SHA256: nonce = SHA256(SHA256(authenticatorData || clientDataHash))
 	clientDataHash := sha256.Sum256([]byte(challenge))
 	composite := make([]byte, 0, len(assertion.AuthenticatorData)+sha256.Size)
 	composite = append(composite, assertion.AuthenticatorData...)

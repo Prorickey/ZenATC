@@ -4,7 +4,6 @@
 //
 
 import SwiftUI
-import StoreKit
 
 struct SettingsView: View {
     @Environment(ThemeManager.self) private var themeManager
@@ -355,11 +354,6 @@ struct SettingsView: View {
         .padding(.horizontal, 20)
     }
 
-    private func sectionTitle(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 14, weight: .bold))
-            .foregroundStyle(themeManager.theme.foreground)
-    }
 }
 
 private struct ProBadge: View {
@@ -511,45 +505,6 @@ private struct AudioPackRow: View {
     }
 }
 
-private enum AirportCardStyle {
-    case green
-    case orange
-    case blue
-
-    func colors() -> (Color, Color) {
-        switch self {
-        case .green:
-            return (Color(red: 0.13, green: 0.52, blue: 0.29), Color(red: 0.78, green: 0.9, blue: 0.68))
-        case .orange:
-            return (Color(red: 0.94, green: 0.46, blue: 0.16), Color(red: 0.98, green: 0.86, blue: 0.68))
-        case .blue:
-            return (Color(red: 0.15, green: 0.4, blue: 0.74), Color(red: 0.78, green: 0.9, blue: 0.98))
-        }
-    }
-}
-
-private struct AirportCard: View {
-    let code: String
-    let style: AirportCardStyle
-
-    var body: some View {
-        let colors = style.colors()
-        ZStack {
-            RoundedRectangle(cornerRadius: 18)
-                .fill(colors.1)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .stroke(colors.0.opacity(0.2), lineWidth: 1)
-                )
-
-            Text(code)
-                .font(.gtStandardAirport(size: 56))
-                .foregroundStyle(colors.0)
-        }
-        .frame(width: 120, height: 170)
-    }
-}
-
 private struct PremiumAudioCard: View {
     let accent: Color
 
@@ -649,85 +604,6 @@ private struct ThemeCarousel: View {
             }
         }
         .frame(height: 520)
-    }
-}
-
-// MARK: - Mini App Screen
-
-private struct MiniAppScreen: View {
-    let theme: AppTheme
-    let airportCode: String
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 31.69)
-                .fill(theme.background)
-
-            VStack(spacing: 0) {
-                // Top bar
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(theme.foreground)
-                        .frame(width: 7, height: 7)
-                    Text("LIVE")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(theme.foreground)
-                    Spacer()
-                    HStack(spacing: 7) {
-                        ForEach(0..<3, id: \.self) { _ in
-                            Circle()
-                                .fill(theme.foreground)
-                                .frame(width: 9, height: 9)
-                        }
-                    }
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, 22)
-
-                // Airport code
-                Spacer()
-                Text(airportCode)
-                    .font(.gtStandardAirport(size: 90))
-                    .foregroundStyle(theme.foreground)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.4)
-                    .padding(.horizontal, 8)
-                Spacer()
-
-                // Bottom controls
-                VStack(spacing: 10) {
-                    // Mixer slider
-                    ZStack(alignment: .leading) {
-                        Capsule()
-                            .fill(theme.foreground.opacity(0.2))
-                            .frame(height: 7)
-                        Capsule()
-                            .fill(theme.foreground)
-                            .frame(width: 28, height: 5)
-                            .padding(.leading, 2)
-                    }
-                    .padding(.horizontal, 18)
-
-                    // Play button
-                    Circle()
-                        .fill(theme.foreground.opacity(0.15))
-                        .frame(width: 38, height: 38)
-                        .overlay(
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(theme.foreground)
-                                .offset(x: 1)
-                        )
-
-                    // Track name
-                    Capsule()
-                        .fill(theme.foreground.opacity(0.25))
-                        .frame(width: 72, height: 5)
-                }
-                .padding(.bottom, 28)
-            }
-        }
-        .frame(width: 208.82, height: 454)
     }
 }
 

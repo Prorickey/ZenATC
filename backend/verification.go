@@ -200,8 +200,7 @@ type attestationObject struct {
 }
 
 type attestationStatement struct {
-	X5C     [][]byte `cbor:"x5c"`
-	Receipt []byte   `cbor:"receipt"`
+	X5C [][]byte `cbor:"x5c"`
 }
 
 // MARK: - Step 1: JWT challenge verification

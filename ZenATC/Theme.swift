@@ -93,7 +93,4 @@ extension Font {
         Font(UIFont.gtStandardAirport(size: size))
     }
 
-    static func schengenCore(size: CGFloat) -> Font {
-        Font.custom("ABCSchengenCoreVariable-Trial", size: size)
-    }
 }

@@ -8,12 +8,6 @@ import DeviceCheck
 import Foundation
 import Observation
 
-struct AttestationPayload {
-    let keyID: String
-    let challengeToken: String
-    let attestationObject: Data
-}
-
 enum AttestationError: LocalizedError {
     case unsupported
     case challengeFetchFailed(Error)
@@ -49,16 +43,14 @@ enum AttestationError: LocalizedError {
     }
 }
 
+private struct AttestationPayload {
+    let keyID: String
+    let challengeToken: String
+    let attestationObject: Data
+}
+
 @Observable
 final class AttestationManager {
-    enum State {
-        case idle
-        case attesting
-        case ready(AttestationPayload)
-        case failed(AttestationError)
-    }
-
-    private(set) var state: State = .idle
     let backendBaseURL: URL
 
     private static let keyIDDefaultsKey        = "tech.bedson.zenatc.attestation.keyID"
@@ -69,21 +61,6 @@ final class AttestationManager {
     }
 
     // MARK: - Public API
-
-    func attest() async {
-        state = .attesting
-        do {
-            let service = DCAppAttestService.shared
-            guard service.isSupported else { throw AttestationError.unsupported }
-            let keyID = try await resolvedKeyID(service: service)
-            let payload = try await buildPayload(keyID: keyID, service: service)
-            state = .ready(payload)
-        } catch let error as AttestationError {
-            state = .failed(error)
-        } catch {
-            state = .failed(.attestationFailed(error))
-        }
-    }
 
     // Returns a short-lived signed CDN URL for the given stream ID.
     //
@@ -97,18 +74,19 @@ final class AttestationManager {
         let service = DCAppAttestService.shared
         guard service.isSupported else { throw AttestationError.unsupported }
 
-        let keyID = try await resolvedKeyID(service: service)
+        var keyID = try await resolvedKeyID(service: service)
 
         if !UserDefaults.standard.bool(forKey: Self.keyRegisteredDefaultsKey) {
             try await attestAndRegister(keyID: keyID, service: service)
+            keyID = try await resolvedKeyID(service: service)
         }
 
         do {
             return try await assertStreamURL(for: streamID, keyID: keyID)
         } catch AttestationError.keyNotFound {
-            // Server lost its state — re-register once and retry.
             clearRegistered()
             try await attestAndRegister(keyID: keyID, service: service)
+            keyID = try await resolvedKeyID(service: service)
             return try await assertStreamURL(for: streamID, keyID: keyID)
         }
     }
@@ -149,22 +127,22 @@ final class AttestationManager {
         let challenge = try decodeChallenge(from: token)
         let clientDataHash = Data(SHA256.hash(data: Data(challenge.utf8)))
 
+        var activeKeyID = keyID
         let attestation: Data
         do {
-            attestation = try await service.attestKey(keyID, clientDataHash: clientDataHash)
+            attestation = try await service.attestKey(activeKeyID, clientDataHash: clientDataHash)
         } catch {
-            // Key may have been wiped (e.g. restore from backup) — regenerate and retry once.
             clearStoredKeyID()
             clearRegistered()
-            let freshKeyID = try await generateAndStoreKey(service: service)
+            activeKeyID = try await generateAndStoreKey(service: service)
             do {
-                attestation = try await service.attestKey(freshKeyID, clientDataHash: clientDataHash)
+                attestation = try await service.attestKey(activeKeyID, clientDataHash: clientDataHash)
             } catch let retryError {
                 throw AttestationError.attestationFailed(retryError)
             }
         }
 
-        return AttestationPayload(keyID: keyID, challengeToken: token, attestationObject: attestation)
+        return AttestationPayload(keyID: activeKeyID, challengeToken: token, attestationObject: attestation)
     }
 
     // MARK: - Assertion
